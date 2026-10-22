@@ -10,7 +10,10 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.service import TelegramProfile
 from app.modules.progress.models import Attempt
 from app.modules.progress.service import _streak
+from app.seed import GAME_TASKS
 from app.seed import TASKS as SEED_TASKS
+
+ALL_SEED = len(SEED_TASKS) + len(GAME_TASKS)
 
 TASK_17 = 8  # единственная задача номера 17 из seed: ответ "2 20"
 TASK_16 = 7  # номер 16: ответ "89"
@@ -69,7 +72,7 @@ def test_stats(client, fake_redis, db):
     assert stats["accuracy"] == 0.5
     assert stats["solved_tasks"] == 1
     assert stats["attempted_tasks"] == 2
-    assert stats["total_tasks"] == len(SEED_TASKS)
+    assert stats["total_tasks"] == ALL_SEED
     assert stats["streak_days"] == 1
     assert stats["active_days"] == 1
 
@@ -120,7 +123,7 @@ def test_archived_task_not_counted_as_solved(client, fake_redis, db, admin_clien
 
     stats = client.get("/me/stats", headers=me).json()
     assert stats["solved_tasks"] == 0
-    assert stats["total_tasks"] == len(SEED_TASKS) - 1
+    assert stats["total_tasks"] == ALL_SEED - 1
     assert stats["total_attempts"] == 1  # сама попытка в истории остаётся
 
 

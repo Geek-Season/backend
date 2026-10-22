@@ -2,13 +2,14 @@
 
 Каждый класс = одна таблица, каждый атрибут = одна колонка.
 Связь простая: у номера ЕГЭ много задач (прототипов), у задачи — один номер.
+Задача номеров 19–21 состоит из общего условия игры и трёх вопросов — частей.
 
-    exam_numbers 1 ──── * tasks
+    exam_numbers 1 ──── * tasks 1 ──── * task_parts
 """
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -55,8 +56,31 @@ class Task(Base):
     )
 
     exam_number: Mapped[ExamNumber] = relationship(back_populates="tasks")
+    # Части задачи (только у 19–21). У обычной задачи список пуст.
+    parts: Mapped[list["TaskPart"]] = relationship(
+        back_populates="task", order_by="TaskPart.number", cascade="all, delete-orphan"
+    )
 
     @property
     def exam_code(self) -> str:
         """Код номера («1», «19-21») — удобно отдавать в API вместо id."""
         return self.exam_number.code
+
+
+class TaskPart(Base):
+    """Вопрос внутри составной задачи: «19», «20», «21» — у каждого свой ответ и свой балл.
+
+    Условие игры общее и хранится в tasks.statement, здесь — только вопрос.
+    """
+
+    __tablename__ = "task_parts"
+    __table_args__ = (UniqueConstraint("task_id", "number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    number: Mapped[str] = mapped_column(String(10))  # номер задания ЕГЭ: "19", "20", "21"
+    question: Mapped[str] = mapped_column(Text)
+    correct_answer: Mapped[str] = mapped_column(String(100))
+    explanation: Mapped[str] = mapped_column(Text, default="")
+
+    task: Mapped[Task] = relationship(back_populates="parts")

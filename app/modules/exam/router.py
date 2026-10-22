@@ -34,6 +34,7 @@ class ExamItem(BaseModel):
     points: int
     task_id: int
     statement: str
+    question: str | None = Field(default=None, description="Для 19, 20, 21: вопрос к общему условию игры")
     image_url: str | None
     answer: str | None
     # Только после завершения:

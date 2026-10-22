@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.modules.auth import models as _auth_models  # noqa: F401
-from app.modules.tasks.models import Task
+from app.modules.tasks.models import Task, TaskPart
 
 
 class ExamSession(Base):
@@ -44,6 +44,8 @@ class ExamAnswer(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("exam_sessions.id", ondelete="CASCADE"))
     position: Mapped[int] = mapped_column(Integer)  # 1, 2, … — порядок в варианте
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
+    # Для 19–21: какой именно вопрос задачи стоит на этой позиции. У обычных задач — NULL.
+    part_id: Mapped[int | None] = mapped_column(ForeignKey("task_parts.id"))
     points: Mapped[int] = mapped_column(Integer)  # сколько первичных баллов стоит задача
 
     answer: Mapped[str | None] = mapped_column(String(100))
@@ -52,3 +54,8 @@ class ExamAnswer(Base):
 
     session: Mapped[ExamSession] = relationship(back_populates="answers")
     task: Mapped[Task] = relationship()
+    part: Mapped[TaskPart | None] = relationship()
+
+    @property
+    def correct_answer(self) -> str:
+        return self.part.correct_answer if self.part else self.task.correct_answer

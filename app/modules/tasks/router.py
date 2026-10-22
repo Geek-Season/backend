@@ -142,9 +142,15 @@ def check_task(
     Если ученик вошёл, ответ сохраняется в его статистику.
     """
     task = _task_or_404(task_id, db)
-    result = service.check_answer(task, submission.answer)
+    try:
+        result = service.check_answer(task, submission.answer, submission.answers)
+    except service.WrongAnswerFormat:
+        detail = "У этой задачи три части: пришлите answers" if task.parts else "Пришлите answer"
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail) from None
     if user is not None:
-        first_solve = progress.record_attempt(db, user.id, task.id, submission.answer, result["is_correct"])
+        first_solve = progress.record_attempt(
+            db, user.id, task.id, service.answer_text(result, submission.answer), result["is_correct"]
+        )
         if first_solve:
             rating.add_point(r, user.id)
         # Событие для фонового воркера (достижения). Брокер недоступен — ответ всё равно уходит.
@@ -167,6 +173,8 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db), _admin: User = 
         return service.create_task(db, data)
     except service.ExamNumberNotFound as error:
         raise _unknown_number(str(error)) from error
+    except service.InvalidTask as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @tasks_router.patch("/{task_id}", response_model=TaskAdminRead)
@@ -177,7 +185,11 @@ def update_task(
     try:
         return service.update_task(db, task, data)
     except service.ExamNumberNotFound as error:
+        db.rollback()
         raise _unknown_number(str(error)) from error
+    except service.InvalidTask as error:
+        db.rollback()
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @tasks_router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -7,7 +7,9 @@
   а пробник завершается сам при первом же обращении к нему;
 - до завершения правильные ответы и разборы не отдаются;
 - «Завершить» повторно — вернёт тот же результат, без пересчёта;
-- баллы: номера 26 и 27 — по 2 первичных балла, остальные — по 1 (как в ЕГЭ).
+- баллы: номера 26 и 27 — по 2 первичных балла, остальные — по 1 (как в ЕГЭ);
+- задача 19–21 занимает в варианте три позиции (19, 20, 21) — по одной на вопрос,
+  поэтому полный вариант — 27 позиций и 29 первичных баллов.
 
 Redis здесь:
 - exam:active:{user_id} → id сессии, TTL = время до конца пробника. Быстрый ответ
@@ -30,7 +32,7 @@ from app.modules.exam.scale import FULL_PRIMARY_MAX, MIN_PASSING, MIN_UNIVERSITY
 from app.modules.progress import service as progress
 from app.modules.rating import service as rating
 from app.modules.tasks.answers import answers_match
-from app.modules.tasks.models import ExamNumber, Task
+from app.modules.tasks.models import ExamNumber, Task, TaskPart
 
 TWO_POINT_NUMBERS = {"26", "27"}
 
@@ -67,7 +69,10 @@ def _load(db: Session, session_id: int) -> ExamSession | None:
     return db.scalar(
         select(ExamSession)
         .where(ExamSession.id == session_id)
-        .options(selectinload(ExamSession.answers).selectinload(ExamAnswer.task).selectinload(Task.exam_number))
+        .options(
+            selectinload(ExamSession.answers).selectinload(ExamAnswer.task).selectinload(Task.exam_number),
+            selectinload(ExamSession.answers).selectinload(ExamAnswer.part),
+        )
     )
 
 
@@ -132,10 +137,22 @@ def start(db: Session, r: Redis, user_id: int) -> tuple[ExamSession, bool]:
 
         now = _now()
         duration = timedelta(minutes=settings.exam_duration_minutes)
-        answers = [
-            ExamAnswer(position=i, task_id=task_id, points=2 if code in TWO_POINT_NUMBERS else 1)
-            for i, (task_id, code) in enumerate(picked, start=1)
-        ]
+        parts = {}
+        for part in db.scalars(
+            select(TaskPart).where(TaskPart.task_id.in_([task_id for task_id, _ in picked])).order_by(TaskPart.number)
+        ):
+            parts.setdefault(part.task_id, []).append(part)
+
+        answers = []
+        for task_id, code in picked:
+            # Задача из частей — позиция на каждую часть; обычная — одна позиция.
+            for part in parts.get(task_id, [None]):
+                answers.append(ExamAnswer(
+                    position=len(answers) + 1,
+                    task_id=task_id,
+                    part_id=part.id if part else None,
+                    points=2 if code in TWO_POINT_NUMBERS else 1,
+                ))
         session = ExamSession(
             user_id=user_id,
             started_at=now,
@@ -181,16 +198,26 @@ def finish(db: Session, r: Redis, session: ExamSession) -> ExamSession:
     now = _now()
     score = 0
     new_points = 0
+    by_task: dict[int, list[ExamAnswer]] = {}
     for item in session.answers:
-        item.is_correct = bool(item.answer) and answers_match(item.answer, item.task.correct_answer)
+        item.is_correct = bool(item.answer) and answers_match(item.answer, item.correct_answer)
         if item.is_correct:
             score += item.points
-        if item.answer:
-            # Ответы пробника идут в общую статистику и слабые темы.
-            if progress.record_attempt(
-                db, session.user_id, item.task_id, item.answer, item.is_correct, commit=False
-            ):
-                new_points += 1
+        by_task.setdefault(item.task_id, []).append(item)
+
+    # Ответы пробника идут в общую статистику и слабые темы: одна попытка на задачу.
+    # Задача 19–21 засчитывается решённой, если верны все три части.
+    for task_id, items in by_task.items():
+        if not any(i.answer for i in items):
+            continue
+        if items[0].part is None:
+            text = items[0].answer
+        else:
+            text = "; ".join(f"{i.part.number}: {i.answer or '—'}" for i in items)[:100]
+        if progress.record_attempt(
+            db, session.user_id, task_id, text, all(i.is_correct for i in items), commit=False
+        ):
+            new_points += 1
 
     session.primary_score = score
     session.finished_at = min(now, session.deadline_at)  # опоздание не «продлевает» экзамен
@@ -258,19 +285,21 @@ def to_view(session: ExamSession) -> dict:
     for a in session.answers:
         item = {
             "position": a.position,
-            "exam_number": a.task.exam_number.code,
+            # У части 19–21 — её собственный номер: «19», «20» или «21».
+            "exam_number": a.part.number if a.part else a.task.exam_number.code,
             "title": a.task.exam_number.title,
             "points": a.points,
             "task_id": a.task_id,
             "statement": a.task.statement,
+            "question": a.part.question if a.part else None,
             "image_url": a.task.image_url,
             "answer": a.answer,
         }
         if finished:
             item |= {
                 "is_correct": a.is_correct,
-                "correct_answer": a.task.correct_answer,
-                "explanation": a.task.explanation,
+                "correct_answer": a.correct_answer,
+                "explanation": (a.part.explanation or a.task.explanation) if a.part else a.task.explanation,
             }
         items.append(item)
 

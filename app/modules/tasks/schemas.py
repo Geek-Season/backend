@@ -28,6 +28,31 @@ class ExamNumberRead(BaseModel):
     solved: int = Field(default=0, description="Сколько задач номера решил вошедший ученик (0, если не вошёл)")
 
 
+# ---------- Части задачи (номера 19–21) ----------
+
+class PartRead(BaseModel):
+    """Вопрос составной задачи — без ответа."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    number: str = Field(examples=["19"])
+    question: str
+
+
+class PartAdminRead(PartRead):
+    correct_answer: str
+    explanation: str
+
+
+class PartIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    number: str = Field(examples=["19"])
+    question: str = Field(min_length=1)
+    correct_answer: str = Field(min_length=1, max_length=100, examples=["29"])
+    explanation: str = ""
+
+
 # ---------- Задачи ----------
 
 class TaskRead(BaseModel):
@@ -45,6 +70,9 @@ class TaskRead(BaseModel):
     source: Source
     source_label: str | None
     difficulty: int
+    parts: list[PartRead] = Field(
+        default=[], description="Вопросы 19, 20, 21 — только у задач номера «19-21»; у остальных пусто"
+    )
     status: Literal["solved", "failed"] | None = Field(
         default=None,
         description="Для вошедшего ученика: solved — решена, failed — пробовал, но неверно",
@@ -62,9 +90,10 @@ class TaskPage(BaseModel):
 class TaskAdminRead(TaskRead):
     """Задача для автора: с ответом и разбором."""
 
-    correct_answer: str
+    correct_answer: str = Field(description="У задач 19–21 — сводка ответов частей, например «19: 29; 20: 28 48; 21: 44»")
     explanation: str
     created_at: datetime
+    parts: list[PartAdminRead] = []
 
 
 class TaskCreate(BaseModel):
@@ -73,11 +102,17 @@ class TaskCreate(BaseModel):
     exam_number: str = Field(examples=["1"])
     statement: str = Field(min_length=1)
     image_url: str | None = Field(default=None, max_length=500)
-    correct_answer: str = Field(min_length=1, max_length=100, examples=["42"])
+    correct_answer: str | None = Field(
+        default=None, min_length=1, max_length=100, examples=["42"],
+        description="Обязателен для всех номеров, кроме «19-21»: там ответы — в parts",
+    )
     explanation: str = ""
     source: Source = "author"
     source_label: str | None = Field(default=None, max_length=100)
     difficulty: int = Field(default=50, ge=0, le=100)
+    parts: list[PartIn] | None = Field(
+        default=None, description="Только для «19-21»: ровно три вопроса с номерами 19, 20, 21"
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -93,6 +128,7 @@ class TaskUpdate(BaseModel):
     source: Source | None = None
     source_label: str | None = Field(default=None, max_length=100)
     difficulty: int | None = Field(default=None, ge=0, le=100)
+    parts: list[PartIn] | None = Field(default=None, description="Заменить вопросы 19–21 целиком")
 
     @model_validator(mode="after")
     def forbid_null_for_required(self):
@@ -108,18 +144,43 @@ class TaskUpdate(BaseModel):
 # ---------- Проверка ответа ----------
 
 class AnswerSubmission(BaseModel):
+    """Обычная задача — поле answer. Задача 19–21 — поле answers: {"19": "29", "20": "28 48", "21": "44"}."""
+
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    answer: str = Field(
+    answer: str | None = Field(
+        default=None,
         min_length=1,
         max_length=100,
         description="Ответ как в бланке ЕГЭ: число, слово или несколько чисел через пробел",
         examples=["4"],
     )
+    answers: dict[str, str] | None = Field(
+        default=None, description="Ответы на части 19–21; пустая строка — нет ответа", examples=[{"19": "29"}]
+    )
+
+    @model_validator(mode="after")
+    def one_of(self):
+        if (self.answer is None) == (self.answers is None):
+            raise ValueError("Пришлите либо answer, либо answers")
+        if self.answers is not None:
+            self.answers = {k.strip(): v.strip() for k, v in self.answers.items()}
+            if any(len(v) > 100 for v in self.answers.values()):
+                raise ValueError("Ответ длиннее 100 символов")
+        return self
+
+
+class PartResult(BaseModel):
+    number: str
+    answer: str
+    is_correct: bool
+    correct_answer: str
+    explanation: str
 
 
 class AnswerResult(BaseModel):
     task_id: int
-    is_correct: bool
+    is_correct: bool = Field(description="У задачи 19–21 — верны все три части")
     correct_answer: str
     explanation: str
+    parts: list[PartResult] = []

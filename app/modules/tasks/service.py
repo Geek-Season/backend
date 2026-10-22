@@ -6,15 +6,44 @@
 """
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.modules.tasks.answers import answers_match
-from app.modules.tasks.models import ExamNumber, Task
-from app.modules.tasks.schemas import Sort, Source, TaskCreate, TaskUpdate
+from app.modules.tasks.models import ExamNumber, Task, TaskPart
+from app.modules.tasks.schemas import PartIn, Sort, Source, TaskCreate, TaskUpdate
+
+# Номера, задачи которых состоят из частей: одно условие — несколько вопросов.
+PART_NUMBERS = {"19-21": ("19", "20", "21")}
 
 
 class ExamNumberNotFound(Exception):
     """Указан номер ЕГЭ, которого нет в базе."""
+
+
+class InvalidTask(Exception):
+    """Задача собрана неправильно: нет ответа, лишние или недостающие части."""
+
+
+class WrongAnswerFormat(Exception):
+    """Для задачи с частями прислали answer, для обычной — answers."""
+
+
+def summary(parts) -> str:
+    """Сводка ответов частей для колонки tasks.correct_answer: «19: 29; 20: 28 48; 21: 44»."""
+    return "; ".join(f"{p.number}: {p.correct_answer}" for p in parts)[:100]
+
+
+def _check_shape(code: str, correct_answer: str | None, parts: list[PartIn] | None) -> None:
+    expected = PART_NUMBERS.get(code)
+    if expected is None:
+        if parts:
+            raise InvalidTask(f"У номера {code} не бывает частей — части есть только у 19–21")
+        if not correct_answer:
+            raise InvalidTask("Укажите правильный ответ")
+        return
+    numbers = sorted(p.number for p in parts or [])
+    if numbers != sorted(expected):
+        raise InvalidTask(f"Задача {code} должна состоять из частей {', '.join(expected)}")
 
 
 # ---------- Номера ----------
@@ -93,7 +122,7 @@ def list_number_tasks(
 
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     tasks = db.scalars(
-        query.options(joinedload(Task.exam_number))
+        query.options(joinedload(Task.exam_number), selectinload(Task.parts))
         .order_by(*_ORDER[sort])
         .limit(limit)
         .offset(offset)
@@ -114,9 +143,14 @@ def create_task(db: Session, data: TaskCreate) -> Task:
     if number is None:
         raise ExamNumberNotFound(data.exam_number)
 
-    fields = data.model_dump(exclude={"exam_number"})
+    _check_shape(number.code, data.correct_answer, data.parts)
+
+    fields = data.model_dump(exclude={"exam_number", "parts"})
     # id не считаем сами: его выдаёт база, поэтому повторов не бывает.
     task = Task(**fields, exam_number=number)
+    if data.parts:
+        task.parts = [TaskPart(**p.model_dump()) for p in data.parts]
+        task.correct_answer = summary(task.parts)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -124,17 +158,41 @@ def create_task(db: Session, data: TaskCreate) -> Task:
 
 
 def update_task(db: Session, task: Task, data: TaskUpdate) -> Task:
-    changes = data.model_dump(exclude_unset=True)
+    changes = data.model_dump(exclude_unset=True, exclude={"parts"})
 
+    number = task.exam_number
     if "exam_number" in changes:
         code = changes.pop("exam_number")
         number = get_number(db, code) if code is not None else None
         if number is None:
             raise ExamNumberNotFound(code)
-        task.exam_number = number
 
+    # На части ссылаются ответы пробников, поэтому игру нельзя превратить в обычную задачу и наоборот.
+    if (number.code in PART_NUMBERS) != (task.exam_number.code in PART_NUMBERS):
+        raise InvalidTask("Задачу 19–21 нельзя перенести в другой номер (и наоборот) — создайте новую")
+
+    # Какой задача станет после изменений — и проверяем её целиком.
+    parts = data.parts if "parts" in data.model_fields_set else (
+        [PartIn.model_validate(p, from_attributes=True) for p in task.parts] or None
+    )
+    answer = changes.get("correct_answer", task.correct_answer if not task.parts else None)
+    _check_shape(number.code, answer, parts)
+
+    task.exam_number = number
     for field, value in changes.items():
         setattr(task, field, value)
+    if "parts" in data.model_fields_set:
+        # Меняем части на месте (по номеру 19/20/21): их id остаются прежними.
+        existing = {p.number: p for p in task.parts}
+        for new in data.parts or []:
+            part = existing.get(new.number)
+            if part is None:
+                task.parts.append(TaskPart(**new.model_dump()))
+            else:
+                for field, value in new.model_dump().items():
+                    setattr(part, field, value)
+    if task.parts:
+        task.correct_answer = summary(task.parts)
 
     db.commit()
     db.refresh(task)
@@ -147,10 +205,40 @@ def archive_task(db: Session, task: Task) -> None:
     db.commit()
 
 
-def check_answer(task: Task, submitted_answer: str) -> dict:
+def check_answer(task: Task, answer: str | None, answers: dict[str, str] | None = None) -> dict:
+    """Проверить ответ. У задачи с частями каждая часть проверяется отдельно;
+    задача решена, если верны все части."""
+    if bool(task.parts) != (answers is not None):
+        raise WrongAnswerFormat
+    if not task.parts:
+        return {
+            "task_id": task.id,
+            "is_correct": answers_match(answer, task.correct_answer),
+            "correct_answer": task.correct_answer,
+            "explanation": task.explanation,
+            "parts": [],
+        }
+    parts = []
+    for part in task.parts:
+        given = answers.get(part.number, "")
+        parts.append({
+            "number": part.number,
+            "answer": given,
+            "is_correct": bool(given) and answers_match(given, part.correct_answer),
+            "correct_answer": part.correct_answer,
+            "explanation": part.explanation,
+        })
     return {
         "task_id": task.id,
-        "is_correct": answers_match(submitted_answer, task.correct_answer),
+        "is_correct": all(p["is_correct"] for p in parts),
         "correct_answer": task.correct_answer,
         "explanation": task.explanation,
+        "parts": parts,
     }
+
+
+def answer_text(result: dict, answer: str | None) -> str:
+    """Что сохранить в статистику как ответ ученика."""
+    if not result["parts"]:
+        return answer
+    return "; ".join(f"{p['number']}: {p['answer'] or '—'}" for p in result["parts"])[:100]

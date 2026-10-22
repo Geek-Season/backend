@@ -14,7 +14,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Geek Season: адрес базы берём из настроек приложения (.env / переменные окружения)
+# Geek Season: адрес базы берём из настроек приложения (.env / переменные окружения),
+# а описание таблиц — из моделей. Каждую новую models.py импортируй здесь,
+# иначе `alembic revision --autogenerate` её не увидит.
 from app.core.config import settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.modules.achievements import models as _achievements_models  # noqa: E402,F401
