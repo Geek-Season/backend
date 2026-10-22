@@ -18,25 +18,24 @@ class Settings(BaseSettings):
     # Redis: быстрые временные данные (коды входа, счётчики попыток).
     redis_url: str = "redis://localhost:6380/0"
 
-    # Telegram-бот: токен выдаёт @BotFather, имя — без @, например GeekSeasonBot.
+    # Брокер сообщений RabbitMQ. Пустая строка — брокер выключен (события не отправляются).
+    rabbitmq_url: str = "amqp://geek:geek@localhost:5672/"
+
     bot_token: str = ""
     bot_username: str = ""
+    telegram_api_url: str = "https://api.telegram.org"
 
-    # Telegram ID администраторов через запятую: ADMIN_TELEGRAM_IDS=123456789,987654321
-    # При входе такой пользователь автоматически получает роль admin.
-    # Свой ID можно узнать у бота @userinfobot.
     admin_telegram_ids: str = ""
 
     @property
     def admin_ids(self) -> set[int]:
         return {int(part) for part in self.admin_telegram_ids.replace(" ", "").split(",") if part}
 
-    # Ключ для подписи токенов входа (JWT). В .env задай свою длинную случайную строку.
+    # Ключ для подписи токенов входа (JWT).
     jwt_secret: str = "dev-secret-change-me-in-env-file-0123456789"
     jwt_expire_days: int = 7
 
     # Длительность пробника в минутах. На ЕГЭ по информатике — 235 (3 ч 55 мин).
-    # Для показа можно поставить 5 в .env: EXAM_DURATION_MINUTES=5
     exam_duration_minutes: int = 235
 
     # Часовой пояс, по которому статистика считает «дни» (серия, график активности).

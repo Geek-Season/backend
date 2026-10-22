@@ -32,6 +32,22 @@ services:
       timeout: 3s
       retries: 15
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: geek
+      RABBITMQ_DEFAULT_PASS: geek
+    ports:
+      - "5672:5672"          # для API и воркера, запущенных на компьютере
+      - "15672:15672"        # веб-панель: http://localhost:15672 (geek / geek)
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq   # очереди переживают перезапуск
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   api:
     build: .
     env_file:
@@ -41,12 +57,15 @@ services:
       # Внутри Docker сервисы видят друг друга по именам «db» и «redis», а не localhost.
       DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
       REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy   # ждём, пока база реально готова
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   bot:
@@ -58,10 +77,29 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
       REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
     depends_on:
       api:
         condition: service_started   # api при старте применяет миграции
     restart: on-failure
 
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]   # достижения и уведомления из очередей RabbitMQ
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
+    depends_on:
+      api:
+        condition: service_started   # api применяет миграции и заполняет справочники
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
 volumes:
   pgdata:
+  rabbitdata:

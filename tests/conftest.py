@@ -10,6 +10,7 @@
 
 import os
 
+os.environ["RABBITMQ_URL"] = ""  # в тестах брокер выключен; события ловит фикстура events
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+psycopg://geek:geek@localhost:5433/geek_test"
 )
@@ -89,3 +90,13 @@ def login(client, fake_redis, db):
         return {"Authorization": f"Bearer {token}"}
 
     return _login
+
+
+@pytest.fixture
+def events(monkeypatch):
+    """Список опубликованных событий [(event, payload), ...] вместо настоящего RabbitMQ."""
+    from app.core import events as events_module
+
+    published = []
+    monkeypatch.setattr(events_module, "publish", lambda event, payload: published.append((event, payload)) or True)
+    return published

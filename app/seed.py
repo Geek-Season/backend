@@ -12,6 +12,7 @@
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
+from app.modules.achievements.service import seed_catalog
 from app.modules.tasks.models import ExamNumber, Task
 
 # (код, название) — в порядке карточек на странице «Задания».
@@ -247,6 +248,7 @@ def seed() -> None:
                 added += 1
 
         db.commit()
+        seed_catalog(db)
         print(f"Номеров ЕГЭ: {len(numbers)}, добавлено задач: {added}")
 
 

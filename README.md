@@ -31,7 +31,8 @@ docker compose up --build
 Открой <http://localhost:8000/docs> — там можно нажимать на запросы и смотреть ответы.
 Остановка: `Ctrl+C`. Удалить вместе с данными базы: `docker compose down -v`.
 
-Поднимутся четыре контейнера: база `db`, `redis`, сервер `api` и `bot`.
+Поднимутся шесть контейнеров: база `db`, `redis`, брокер `rabbitmq`, сервер `api`, `bot` и фоновый `worker`.
+Веб-панель RabbitMQ: <http://localhost:15672> (логин и пароль `geek`).
 При старте `api` сам:
 1. создаёт таблицы в базе (миграции Alembic);
 2. заполняет номера ЕГЭ и несколько примеров задач (`app/seed.py`);
@@ -43,7 +44,7 @@ docker compose up --build
 (сервер перезапускается при сохранении файла).
 
 ```bash
-docker compose up -d db redis                 # только база и Redis
+docker compose up -d db redis rabbitmq        # база, Redis и брокер
 python -m venv .venv
 # Windows:  .\.venv\Scripts\activate     Linux/macOS:  source .venv/bin/activate
 pip install -r requirements.txt
@@ -53,10 +54,11 @@ python -m app.seed                            # заполнить данным�
 uvicorn app.main:app --reload
 ```
 
-Бот — отдельная программа. Запусти её во **второй** вкладке терминала:
+Бот и воркер — отдельные программы. Запусти их в отдельных вкладках терминала:
 
 ```bash
-python -m app.bot
+python -m app.bot       # вход через Telegram
+python -m app.worker    # достижения и уведомления (из очередей RabbitMQ)
 ```
 
 ## Что попробовать в /docs
@@ -80,6 +82,8 @@ python -m app.bot
 | `PUT /exam/{id}/answers/{позиция}` | Сохранить ответ в пробнике |
 | `POST /exam/{id}/finish` | Завершить пробник: баллы и разбор |
 | `GET /rating?period=week` | Рейтинг за неделю (`all` — за всё время) |
+| `GET /me/achievements` | Достижения: полученные и закрытые |
+| `GET /me/notifications` | Последние уведомления и статус отправки в Telegram |
 | `GET /auth/me` | Кто я — нужен заголовок `Authorization: Bearer <токен>` (в /docs — кнопка **Authorize**) |
 
 Коды ответов: `200`/`201`/`204` — всё хорошо; `404` — такого нет; `422` — неправильные
@@ -94,6 +98,8 @@ app/
 ├── core/
 │   ├── config.py           настройки и секреты из .env
 │   ├── db.py               подключение к PostgreSQL
+│   ├── events.py           публикация событий в RabbitMQ, схема очередей
+│   ├── telegram.py         отправка сообщения через Bot API
 │   └── redis.py            подключение к Redis
 ├── bot/                    Telegram-бот (python -m app.bot)
 │   ├── __main__.py         запуск
@@ -109,6 +115,9 @@ app/
 │   ├── service.py          вариант, серверный таймер, автозавершение, баллы
 │   └── router.py           /exam/...
 ├── modules/rating/         модуль «рейтинг» (Redis sorted set, пересборка из базы)
+├── modules/achievements/   ТАБЛИЦЫ achievements, user_achievements; выдача по событиям
+├── modules/notifications/  ТАБЛИЦА notifications; текст и отправка в Telegram
+├── worker/                 фоновый воркер (python -m app.worker): очереди RabbitMQ
 ├── modules/progress/       модуль «прогресс»
 │   ├── models.py           ТАБЛИЦА attempts — каждый ответ вошедшего ученика
 │   ├── service.py          статистика: решено, точность, серия, дни, по номерам
@@ -165,6 +174,24 @@ tests/                      автотесты
 - Номер попадает в «что повторить», если в нём есть нерешённая задача, которую ученик пробовал,
   или точность ниже 60 % при 3+ ответах.
 
+### События, достижения, уведомления (RabbitMQ)
+
+```
+API ──► exchange geek.events (topic)
+   task.answered       → achievements       → воркер пересчитывает достижения → achievement.granted
+   exam.finished       → achievements, notifications
+   achievement.granted → notifications      → воркер пишет уведомление и шлёт его в Telegram
+ошибка → <очередь>.retry (пауза 5 с) → повтор; после 3 неудач → geek.dead
+```
+
+- API только **публикует** событие и сразу отвечает: ученик не ждёт Telegram.
+  Брокер недоступен — событие пишется в лог, ответ уходит как обычно.
+- Воркер не верит содержимому события: достижения считаются **заново по базе**.
+  Поэтому повторная доставка ничего не дублирует, а пропущенное событие исправит следующее.
+- Без дублей уведомлений: `notifications.event_id` уникален.
+- Ошибки Telegram: временные (сеть, 429, 5xx) — повтор; постоянные (бот заблокирован) —
+  уведомление сохраняется с `error`, без повторов.
+
 ### Как сравниваются ответы
 
 Ответ режется по пробелам, части сравниваются по очереди:
@@ -214,5 +241,5 @@ pytest
 
 ## Что дальше
 
-1. RabbitMQ: события и фоновые обработчики.
-2. Достижения и уведомления в Telegram.
+1. Разбить карточку 19–21 на три задания (точный тестовый балл).
+2. Ежедневное напоминание «серия под угрозой» (планировщик + очередь).

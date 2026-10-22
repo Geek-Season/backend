@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from app.core import events
 from app.core.db import get_db
 from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user, require_admin
@@ -146,6 +147,11 @@ def check_task(
         first_solve = progress.record_attempt(db, user.id, task.id, submission.answer, result["is_correct"])
         if first_solve:
             rating.add_point(r, user.id)
+        # Событие для фонового воркера (достижения). Брокер недоступен — ответ всё равно уходит.
+        events.publish("task.answered", {
+            "user_id": user.id, "task_id": task.id,
+            "is_correct": result["is_correct"], "first_solve": first_solve,
+        })
     return result
 
 

@@ -13,8 +13,8 @@ SCALE_2026 = {
 }
 
 FULL_PRIMARY_MAX = 29
-MIN_PASSING = 40      # минимальный балл Рособрнадзора (аттестат)
-MIN_UNIVERSITY = 46   # минимальный балл для поступления в вуз (Минобрнауки)
+MIN_PASSING = 40      # минимальный балл для получения аттестата
+MIN_UNIVERSITY = 46   # минимальный балл для поступления в вуз
 
 
 def to_test_score(primary: int) -> int:

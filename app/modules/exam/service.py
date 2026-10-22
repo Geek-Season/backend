@@ -23,6 +23,7 @@ from redis import Redis
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core import events
 from app.core.config import settings
 from app.modules.exam.models import ExamAnswer, ExamSession
 from app.modules.exam.scale import FULL_PRIMARY_MAX, MIN_PASSING, MIN_UNIVERSITY, to_test_score
@@ -197,6 +198,17 @@ def finish(db: Session, r: Redis, session: ExamSession) -> ExamSession:
 
     r.delete(_active_key(session.user_id))
     rating.add_point(r, session.user_id, new_points)
+    # Событие для воркера: уведомление в Telegram и достижения. Публикуется и при
+    # автозавершении по времени — ученик узнает результат, даже закрыв вкладку.
+    scores = test_score_fields(session)
+    events.publish("exam.finished", {
+        "user_id": session.user_id,
+        "session_id": session.id,
+        "primary_score": score,
+        "max_score": session.max_score,
+        "test_score": scores["test_score"],
+        "test_score_approximate": scores["test_score_approximate"],
+    })
     return session
 
 
