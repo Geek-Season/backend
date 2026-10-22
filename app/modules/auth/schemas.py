@@ -11,6 +11,7 @@ class UserRead(BaseModel):
     first_name: str
     last_name: str | None
     username: str | None
+    role: Literal["student", "admin"]
     created_at: datetime
 
 

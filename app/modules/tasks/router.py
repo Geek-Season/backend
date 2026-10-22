@@ -7,7 +7,7 @@
 Страница прототипов номера:           GET  /numbers/{code}/tasks
 Одна задача:                          GET  /tasks/{id}
 Проверка ответа:                      POST /tasks/{id}/check
-Управление банком (для автора задач): POST/PATCH/DELETE /tasks
+Управление банком (только админ):     POST/PATCH/DELETE /tasks, GET /tasks/{id}/admin
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.redis import get_redis
-from app.modules.auth.deps import get_optional_user
+from app.modules.auth.deps import get_optional_user, require_admin
 from app.modules.auth.models import User
 from app.modules.progress import service as progress
 from app.modules.rating import service as rating
@@ -149,8 +149,14 @@ def check_task(
     return result
 
 
+@tasks_router.get("/{task_id}/admin", response_model=TaskAdminRead)
+def get_task_admin(task_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Задача целиком — с ответом и разбором. Для редактора."""
+    return _task_or_404(task_id, db)
+
+
 @tasks_router.post("", response_model=TaskAdminRead, status_code=status.HTTP_201_CREATED)
-def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+def create_task(data: TaskCreate, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     try:
         return service.create_task(db, data)
     except service.ExamNumberNotFound as error:
@@ -158,7 +164,9 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
 
 
 @tasks_router.patch("/{task_id}", response_model=TaskAdminRead)
-def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
+def update_task(
+    task_id: int, data: TaskUpdate, db: Session = Depends(get_db), _admin: User = Depends(require_admin)
+):
     task = _task_or_404(task_id, db)
     try:
         return service.update_task(db, task, data)
@@ -167,7 +175,7 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
 
 
 @tasks_router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(task_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     """Задача переносится в архив и пропадает из списков."""
     task = _task_or_404(task_id, db)
     service.archive_task(db, task)

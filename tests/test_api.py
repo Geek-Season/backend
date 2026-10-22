@@ -32,10 +32,9 @@ def test_filter_by_source(client):
     assert client.get("/numbers/7/tasks?source=official").json()["total"] == 0
 
 
-def test_sort_by_difficulty(client):
+def test_sort_by_difficulty(client, admin_client):
     for difficulty in (70, 10, 40):
-        client.post(
-            "/tasks",
+        admin_client.post("/tasks",
             json={"exam_number": "1", "statement": f"Задача {difficulty}",
                   "correct_answer": "1", "difficulty": difficulty},
         )
@@ -43,9 +42,9 @@ def test_sort_by_difficulty(client):
     assert easy == [10, 40, 70]
 
 
-def test_pagination(client):
+def test_pagination(client, admin_client):
     for i in range(5):
-        client.post("/tasks", json={"exam_number": "1", "statement": f"З{i}", "correct_answer": "1"})
+        admin_client.post("/tasks", json={"exam_number": "1", "statement": f"З{i}", "correct_answer": "1"})
     page = client.get("/numbers/1/tasks?limit=2&offset=4").json()
     assert page["total"] == 5
     assert len(page["items"]) == 1
@@ -71,64 +70,59 @@ def test_check_validation(client, new_task):
 
 # ---------- Старые баги ----------
 
-def test_bug1_ids_are_unique_after_delete(client):
+def test_bug1_ids_are_unique_after_delete(client, admin_client):
     """Раньше id = len(TASKS) + 1 повторялся после удаления."""
-    first = client.post("/tasks", json={"exam_number": "1", "statement": "A", "correct_answer": "1"}).json()
-    client.delete(f"/tasks/{first['id']}")
-    second = client.post("/tasks", json={"exam_number": "1", "statement": "B", "correct_answer": "1"}).json()
-    third = client.post("/tasks", json={"exam_number": "1", "statement": "C", "correct_answer": "1"}).json()
+    first = admin_client.post("/tasks", json={"exam_number": "1", "statement": "A", "correct_answer": "1"}).json()
+    admin_client.delete(f"/tasks/{first['id']}")
+    second = admin_client.post("/tasks", json={"exam_number": "1", "statement": "B", "correct_answer": "1"}).json()
+    third = admin_client.post("/tasks", json={"exam_number": "1", "statement": "C", "correct_answer": "1"}).json()
     assert len({first["id"], second["id"], third["id"]}) == 3
 
 
-def test_bug2_text_answer_does_not_crash(client):
+def test_bug2_text_answer_does_not_crash(client, admin_client):
     """Раньше ответ «abc» ронял проверку с ошибкой 500."""
-    task = client.post(
-        "/tasks", json={"exam_number": "2", "statement": "Буквы", "correct_answer": "zyxw"}
+    task = admin_client.post("/tasks", json={"exam_number": "2", "statement": "Буквы", "correct_answer": "zyxw"}
     ).json()
     response = client.post(f"/tasks/{task['id']}/check", json={"answer": "ZYXW"})
     assert response.status_code == 200
     assert response.json()["is_correct"] is True
 
 
-def test_bug3_delete(client, new_task):
+def test_bug3_delete(client, new_task, admin_client):
     """Раньше удаление несуществующей задачи отвечало 200 null."""
-    assert client.delete("/tasks/999999").status_code == 404
-    assert client.delete(f"/tasks/{new_task['id']}").status_code == 204
+    assert admin_client.delete("/tasks/999999").status_code == 404
+    assert admin_client.delete(f"/tasks/{new_task['id']}").status_code == 204
     # Задача ушла в архив: её больше не видно.
     assert client.get(f"/tasks/{new_task['id']}").status_code == 404
-    assert client.delete(f"/tasks/{new_task['id']}").status_code == 404
+    assert admin_client.delete(f"/tasks/{new_task['id']}").status_code == 404
     assert client.get("/numbers/1/tasks").json()["total"] == 0
 
 
-def test_bug4_patch_updates(client, new_task):
+def test_bug4_patch_updates(client, new_task, admin_client):
     """Раньше PATCH печатал «okey» и ничего не менял."""
     url = f"/tasks/{new_task['id']}"
-    response = client.patch(url, json={"correct_answer": "43", "exam_number": "2"})
+    response = admin_client.patch(url, json={"correct_answer": "43", "exam_number": "2"})
     assert response.status_code == 200
     assert response.json()["correct_answer"] == "43"
     assert response.json()["exam_number"] == "2"
     assert response.json()["statement"] == "Тестовая задача"  # не присланное не меняется
-    assert client.patch(url, json={"statement": None}).status_code == 422
-    assert client.patch(url, json={"exam_number": "99"}).status_code == 422
-    assert client.patch("/tasks/999999", json={"difficulty": 1}).status_code == 404
+    assert admin_client.patch(url, json={"statement": None}).status_code == 422
+    assert admin_client.patch(url, json={"exam_number": "99"}).status_code == 422
+    assert admin_client.patch("/tasks/999999", json={"difficulty": 1}).status_code == 404
 
 
-def test_bug5_create_returns_201_with_id(client):
+def test_bug5_create_returns_201_with_id(client, admin_client):
     """Раньше создание отвечало 200 без id."""
-    response = client.post(
-        "/tasks", json={"exam_number": "1", "statement": "X", "correct_answer": "1"}
+    response = admin_client.post("/tasks", json={"exam_number": "1", "statement": "X", "correct_answer": "1"}
     )
     assert response.status_code == 201
     assert isinstance(response.json()["id"], int)
 
 
-def test_create_validation(client):
-    assert client.post(
-        "/tasks", json={"exam_number": "99", "statement": "X", "correct_answer": "1"}
+def test_create_validation(client, admin_client):
+    assert admin_client.post("/tasks", json={"exam_number": "99", "statement": "X", "correct_answer": "1"}
     ).status_code == 422
-    assert client.post(
-        "/tasks", json={"exam_number": "1", "statement": "X", "correct_answer": "1", "difficulty": 101}
+    assert admin_client.post("/tasks", json={"exam_number": "1", "statement": "X", "correct_answer": "1", "difficulty": 101}
     ).status_code == 422
-    assert client.post(
-        "/tasks", json={"exam_number": "1", "statement": "", "correct_answer": "1"}
+    assert admin_client.post("/tasks", json={"exam_number": "1", "statement": "", "correct_answer": "1"}
     ).status_code == 422

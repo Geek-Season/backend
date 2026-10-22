@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.modules.auth.models import User
+from app.modules.auth.models import ROLE_ADMIN, User
 
 PENDING = "pending"
 DECLINED = "declined"
@@ -69,6 +69,8 @@ def upsert_user(db: Session, profile: TelegramProfile) -> User:
     user.last_name = profile.last_name
     user.username = profile.username
     user.last_login_at = datetime.now(UTC)
+    if profile.telegram_id in settings.admin_ids:
+        user.role = ROLE_ADMIN  # админов из .env повышаем; понижать вручную — make_admin --remove
     db.commit()
     db.refresh(user)
     return user

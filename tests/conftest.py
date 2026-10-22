@@ -52,9 +52,22 @@ def client(fake_redis) -> TestClient:
 
 
 @pytest.fixture
-def new_task(client):
+def admin_client(fake_redis, db) -> TestClient:
+    """Клиент, вошедший как администратор (может управлять банком задач)."""
+    from app.modules.auth.models import ROLE_ADMIN
+    from app.modules.auth.service import TelegramProfile, upsert_user
+    from app.modules.auth.tokens import create_access_token
+
+    admin = upsert_user(db, TelegramProfile(telegram_id=1, first_name="Админ"))
+    admin.role = ROLE_ADMIN
+    db.commit()
+    return TestClient(app, headers={"Authorization": f"Bearer {create_access_token(admin.id)}"})
+
+
+@pytest.fixture
+def new_task(admin_client):
     """Создаёт задачу в номере 1 и возвращает её JSON."""
-    response = client.post(
+    response = admin_client.post(
         "/tasks",
         json={"exam_number": "1", "statement": "Тестовая задача", "correct_answer": "42"},
     )

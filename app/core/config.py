@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     bot_token: str = ""
     bot_username: str = ""
 
+    # Telegram ID администраторов через запятую: ADMIN_TELEGRAM_IDS=123456789,987654321
+    # При входе такой пользователь автоматически получает роль admin.
+    # Свой ID можно узнать у бота @userinfobot.
+    admin_telegram_ids: str = ""
+
+    @property
+    def admin_ids(self) -> set[int]:
+        return {int(part) for part in self.admin_telegram_ids.replace(" ", "").split(",") if part}
+
     # Ключ для подписи токенов входа (JWT). В .env задай свою длинную случайную строку.
     jwt_secret: str = "dev-secret-change-me-in-env-file-0123456789"
     jwt_expire_days: int = 7

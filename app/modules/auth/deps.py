@@ -5,6 +5,7 @@
     def handler(user: User = Depends(get_current_user)): ...
 
 Без правильного заголовка `Authorization: Bearer <токен>` FastAPI сам ответит 401.
+Только для администратора: `Depends(require_admin)` — остальным 403.
 """
 
 from fastapi import Depends, HTTPException, status
@@ -52,4 +53,11 @@ def get_current_user(
     user = get_user(db, user_id)
     if user is None:
         raise unauthorized
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Не вошёл — 401 (из get_current_user); вошёл, но не админ — 403."""
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Только для администратора")
     return user

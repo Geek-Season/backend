@@ -15,6 +15,9 @@
    - `JWT_SECRET` — длинная случайная строка:
      `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 
+4. `ADMIN_TELEGRAM_IDS` — твой Telegram ID (узнать — бот @userinfobot): ты станешь администратором
+   и сможешь управлять банком задач через страницу «Редактор» на сайте.
+
 Файл `.env` в Git не попадает. Токен бота никому не показывай: с ним можно управлять ботом.
 
 ## Запуск — одна команда (Docker)
@@ -66,9 +69,9 @@ python -m app.bot
 | `GET /numbers/1/tasks?sort=easy` | Сначала лёгкие (`new`, `old`, `easy`, `hard`) |
 | `GET /numbers/1/tasks?progress=unsolved` | Только ещё не решённые (`solved` — решённые). Нужен вход |
 | `POST /tasks/8/check` с `{"answer": "2 20"}` | `is_correct: true` |
-| `POST /tasks` | Добавить задачу (ответ `201` и её `id`) |
-| `PATCH /tasks/{id}` | Изменить только присланные поля |
-| `DELETE /tasks/{id}` | Убрать задачу в архив (`204`) |
+| `POST /tasks` | Добавить задачу (ответ `201` и её `id`) — **только админ** |
+| `PATCH /tasks/{id}` | Изменить только присланные поля — только админ |
+| `DELETE /tasks/{id}` | Убрать задачу в архив (`204`) — только админ |
 | `POST /auth/telegram/start` | Ключ и ссылка на бота для QR-кода |
 | `GET /auth/telegram/status/{ключ}` | `pending` → после «Да» в боте `confirmed` и токен |
 | `POST /auth/code` с `{"code": "123456"}` | Вход по коду из бота (`/login`) |
@@ -132,6 +135,13 @@ tests/                      автотесты
 считаются по часовому поясу `TIMEZONE` (по умолчанию Europe/Moscow).
 Вошедший ученик также получает `solved` в `GET /numbers` и `status` у задач
 в `GET /numbers/{code}/tasks`.
+
+### Роли
+
+- `student` — все, кто вошёл; `admin` — может управлять банком задач.
+- Гость на `POST/PATCH/DELETE /tasks` получает 401, ученик — 403.
+- Назначить админа: `ADMIN_TELEGRAM_IDS` в `.env` (роль выдаётся при входе) или командой
+  `python -m app.make_admin @username` (снять — `--remove`).
 
 ### Пробник
 

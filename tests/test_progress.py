@@ -113,10 +113,10 @@ def test_users_do_not_see_each_other(client, fake_redis, db):
     assert client.get("/numbers/17/tasks", headers=petya).json()["items"][0]["status"] is None
 
 
-def test_archived_task_not_counted_as_solved(client, fake_redis, db):
+def test_archived_task_not_counted_as_solved(client, fake_redis, db, admin_client):
     me = login(client, fake_redis, db)
     answer(client, TASK_17, "2 20", me)
-    client.delete(f"/tasks/{TASK_17}")
+    admin_client.delete(f"/tasks/{TASK_17}")
 
     stats = client.get("/me/stats", headers=me).json()
     assert stats["solved_tasks"] == 0
@@ -173,11 +173,11 @@ def _ids(client, url, headers):
     return page["total"], [t["id"] for t in page["items"]]
 
 
-def test_progress_filter(client, fake_redis, db):
+def test_progress_filter(client, fake_redis, db, admin_client):
     me = login(client, fake_redis, db)
     # В номере 1 три задачи: одну решим, в одной ошибёмся, третью не тронем.
     ids = [
-        client.post("/tasks", json={"exam_number": "1", "statement": f"З{i}", "correct_answer": "1"}).json()["id"]
+        admin_client.post("/tasks", json={"exam_number": "1", "statement": f"З{i}", "correct_answer": "1"}).json()["id"]
         for i in range(3)
     ]
     solved, failed, untouched = ids
