@@ -19,6 +19,7 @@ if config.config_file_name is not None:
 # иначе `alembic revision --autogenerate` её не увидит.
 from app.core.config import settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
+from app.modules.auth import models as _auth_models  # noqa: E402,F401
 from app.modules.tasks import models as _tasks_models  # noqa: E402,F401
 
 config.set_main_option("sqlalchemy.url", settings.database_url)

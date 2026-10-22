@@ -9,6 +9,12 @@ sqlalchemy==2.0.44
 psycopg[binary]==3.2.12
 alembic==1.17.1
 
+# Вход через Telegram
+redis==8.1.0
+pyjwt==2.15.1
+aiogram==3.31.0
+
 # Тесты
 pytest==8.4.2
 httpx2==2.16.0
+fakeredis==2.40.0

@@ -3,18 +3,23 @@
 Тесты работают с ОТДЕЛЬНОЙ базой (geek_test), чтобы не портить данные разработки.
 Адрес задаётся переменной TEST_DATABASE_URL.
 Перед каждым тестом база очищается и заново наполняется из app/seed.py.
+
+Вместо настоящего Redis используется fakeredis — его копия в памяти,
+поэтому для тестов Redis запускать не нужно.
 """
 
 import os
 
 os.environ["DATABASE_URL"] = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+psycopg://geek:geek@localhost:5432/geek_test"
+    "TEST_DATABASE_URL", "postgresql+psycopg://geek:geek@localhost:5433/geek_test"
 )
 
+import fakeredis  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.core.db import Base, engine  # noqa: E402
+from app.core.db import Base, SessionLocal, engine  # noqa: E402
+from app.core.redis import get_redis  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import seed  # noqa: E402
 
@@ -28,7 +33,21 @@ def clean_db():
 
 
 @pytest.fixture
-def client() -> TestClient:
+def fake_redis():
+    r = fakeredis.FakeRedis(decode_responses=True)
+    app.dependency_overrides[get_redis] = lambda: r
+    yield r
+    app.dependency_overrides.pop(get_redis, None)
+
+
+@pytest.fixture
+def db():
+    with SessionLocal() as session:
+        yield session
+
+
+@pytest.fixture
+def client(fake_redis) -> TestClient:
     return TestClient(app)
 
 

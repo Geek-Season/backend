@@ -1,5 +1,7 @@
 # Запуск всего проекта одной командой:  docker compose up --build
-# Сайт API:  http://localhost:8000/docs
+# API:  http://localhost:8000/docs
+#
+# Секреты (BOT_TOKEN, BOT_USERNAME, JWT_SECRET) берутся из файла .env рядом.
 
 services:
   db:
@@ -9,7 +11,8 @@ services:
       POSTGRES_PASSWORD: geek
       POSTGRES_DB: geek_season
     ports:
-      - "5433:5432"          # чтобы подключаться к базе из PyCharm / DBeaver
+      # Снаружи порт 5433, а не 5432: 5432 часто занят PostgreSQL, установленным на компьютер.
+      - "5433:5432"          # чтобы подключаться к базе из PyCharm / DBeaver / pgAdmin
     volumes:
       - pgdata:/var/lib/postgresql/data   # данные переживают перезапуск
       - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
@@ -19,16 +22,46 @@ services:
       timeout: 3s
       retries: 15
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"          # снаружи 6380 — на случай, если 6379 уже занят
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   api:
     build: .
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # Внутри Docker база доступна по имени сервиса «db», а не localhost.
+      # Внутри Docker сервисы видят друг друга по именам «db» и «redis», а не localhost.
       DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy   # ждём, пока база реально готова
+      redis:
+        condition: service_healthy
+
+  bot:
+    build: .
+    command: ["python", "-m", "app.bot"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      api:
+        condition: service_started   # api при старте применяет миграции
+    restart: on-failure
 
 volumes:
   pgdata:
