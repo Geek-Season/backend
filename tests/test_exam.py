@@ -7,9 +7,11 @@ from sqlalchemy import select, update
 from app.modules.exam.models import ExamSession
 from app.modules.progress.models import Attempt
 from app.modules.tasks.models import Task
+from app.seed import GAME_TASKS
 from app.seed import TASKS as SEED_TASKS
 
-NUMBERS_WITH_TASKS = {t["exam_number"] for t in SEED_TASKS}
+# Задача 19–21 занимает в варианте три позиции: 19, 20, 21.
+NUMBERS_WITH_TASKS = {t["exam_number"] for t in SEED_TASKS} | ({"19", "20", "21"} if GAME_TASKS else set())
 MAX_SCORE = len(NUMBERS_WITH_TASKS) + 2  # 26 и 27 стоят по 2 балла
 
 
@@ -35,7 +37,10 @@ def test_start_builds_variant_without_answers(client, login):
     assert response.status_code == 201
     exam = response.json()
     assert [i["position"] for i in exam["items"]] == list(range(1, len(NUMBERS_WITH_TASKS) + 1))
-    assert {i["exam_number"] for i in exam["items"]} == NUMBERS_WITH_TASKS
+    codes = [i["exam_number"] for i in exam["items"]]
+    assert set(codes) == NUMBERS_WITH_TASKS
+    at = codes.index("19")
+    assert codes[at - 1:at + 4] == ["17", "19", "20", "21", "25"]
     assert exam["max_score"] == MAX_SCORE
     assert exam["finished_at"] is None and exam["primary_score"] is None
     assert all(i["correct_answer"] is None and i["explanation"] is None for i in exam["items"])
