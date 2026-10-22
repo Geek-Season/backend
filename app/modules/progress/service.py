@@ -19,9 +19,87 @@ ACTIVITY_DAYS = 14
 RECENT_LIMIT = 10
 
 
-def record_attempt(db: Session, user_id: int, task_id: int, answer: str, is_correct: bool) -> None:
+WEAK_LIMIT = 5
+WEAK_MIN_ATTEMPTS = 3      # с какого числа ответов судить о точности по номеру
+WEAK_ACCURACY = 0.6        # ниже этой точности номер считается слабым
+
+
+def record_attempt(
+    db: Session, user_id: int, task_id: int, answer: str, is_correct: bool, commit: bool = True
+) -> bool:
+    """Сохраняет ответ. Возвращает True, если задача решена ВПЕРВЫЕ (нужно рейтингу)."""
+    first_solve = is_correct and not db.scalar(
+        select(func.count(Attempt.id)).where(
+            Attempt.user_id == user_id, Attempt.task_id == task_id, Attempt.is_correct.is_(True)
+        )
+    )
     db.add(Attempt(user_id=user_id, task_id=task_id, answer=answer, is_correct=is_correct))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()  # чтобы следующая проверка «впервые?» в той же транзакции видела эту попытку
+    return first_solve
+
+
+def first_solves(db: Session, since: datetime | None = None) -> dict[int, int]:
+    """{user_id: сколько задач решено впервые} (с даты since, если задана).
+
+    Из этого пересобирается рейтинг, если в Redis его нет.
+    """
+    first = (
+        select(Attempt.user_id, Attempt.task_id, func.min(Attempt.created_at).label("at"))
+        .where(Attempt.is_correct.is_(True))
+        .group_by(Attempt.user_id, Attempt.task_id)
+        .subquery()
+    )
+    query = select(first.c.user_id, func.count()).group_by(first.c.user_id)
+    if since is not None:
+        query = query.where(first.c.at >= since)
+    return dict(db.execute(query).all())
+
+
+def weak_numbers(db: Session, user_id: int) -> list[dict]:
+    """Номера, которые стоит повторить.
+
+    Номер слабый, если в нём есть задача, которую ученик пробовал, но так и не решил,
+    или если ответов по номеру ≥ 3, а точность ниже 60 %.
+    Сначала — самые проблемные (ниже точность, больше нерешённых).
+    """
+    per_task = (
+        select(
+            Task.exam_number_id.label("number_id"),
+            Attempt.task_id,
+            func.count(Attempt.id).label("attempts"),
+            func.sum(case((Attempt.is_correct, 1), else_=0)).label("correct"),
+        )
+        .join(Task, Task.id == Attempt.task_id)
+        .where(Attempt.user_id == user_id, Task.is_archived.is_(False))
+        .group_by(Task.exam_number_id, Attempt.task_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(
+            ExamNumber.code,
+            ExamNumber.title,
+            func.sum(per_task.c.attempts),
+            func.sum(per_task.c.correct),
+            func.sum(case((per_task.c.correct == 0, 1), else_=0)),
+        )
+        .join(ExamNumber, ExamNumber.id == per_task.c.number_id)
+        .group_by(ExamNumber.code, ExamNumber.title, ExamNumber.position)
+        .order_by(ExamNumber.position)
+    ).all()
+
+    weak = []
+    for code, title, attempts, correct, failed in rows:
+        accuracy = correct / attempts
+        if failed > 0 or (attempts >= WEAK_MIN_ATTEMPTS and accuracy < WEAK_ACCURACY):
+            weak.append({
+                "code": code, "title": title, "attempts": attempts, "correct": correct,
+                "accuracy": round(accuracy, 3), "unsolved_tasks": failed,
+            })
+    weak.sort(key=lambda w: (w["accuracy"], -w["unsolved_tasks"]))
+    return weak[:WEAK_LIMIT]
 
 
 def _solved_task_ids(user_id: int):
@@ -31,6 +109,11 @@ def _solved_task_ids(user_id: int):
         .join(Task, Task.id == Attempt.task_id)
         .where(Attempt.user_id == user_id, Attempt.is_correct.is_(True), Task.is_archived.is_(False))
     )
+
+
+def solved_task_ids(user_id: int):
+    """Подзапрос «id задач, решённых учеником» — для фильтра на странице номера."""
+    return _solved_task_ids(user_id)
 
 
 def solved_by_number(db: Session, user_id: int) -> dict[int, int]:
@@ -161,5 +244,6 @@ def user_stats(db: Session, user_id: int) -> dict:
         "active_days": len(per_day),
         "activity": activity,
         "by_number": by_number,
+        "weak_numbers": weak_numbers(db, user_id),
         "recent": recent,
     }

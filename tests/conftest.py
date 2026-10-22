@@ -60,3 +60,19 @@ def new_task(client):
     )
     assert response.status_code == 201
     return response.json()
+
+
+@pytest.fixture
+def login(client, fake_redis, db):
+    """login(telegram_id, имя) → заголовки с токеном вошедшего ученика."""
+    from app.modules.auth import service as auth_service
+
+    def _login(telegram_id: int = 111, name: str = "Вася") -> dict:
+        profile = auth_service.TelegramProfile(telegram_id=telegram_id, first_name=name)
+        code = auth_service.issue_code(fake_redis, db, profile)
+        token = client.post("/auth/code", json={"code": code}).json()["access_token"]
+        for key in fake_redis.scan_iter("login:attempts:*"):
+            fake_redis.delete(key)  # сбросить счётчик попыток ввода кода
+        return {"Authorization": f"Bearer {token}"}
+
+    return _login

@@ -10,6 +10,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.service import TelegramProfile
 from app.modules.progress.models import Attempt
 from app.modules.progress.service import _streak
+from app.seed import TASKS as SEED_TASKS
 
 TASK_17 = 8  # единственная задача номера 17 из seed: ответ "2 20"
 TASK_16 = 7  # номер 16: ответ "89"
@@ -68,7 +69,7 @@ def test_stats(client, fake_redis, db):
     assert stats["accuracy"] == 0.5
     assert stats["solved_tasks"] == 1
     assert stats["attempted_tasks"] == 2
-    assert stats["total_tasks"] == 8
+    assert stats["total_tasks"] == len(SEED_TASKS)
     assert stats["streak_days"] == 1
     assert stats["active_days"] == 1
 
@@ -119,7 +120,7 @@ def test_archived_task_not_counted_as_solved(client, fake_redis, db):
 
     stats = client.get("/me/stats", headers=me).json()
     assert stats["solved_tasks"] == 0
-    assert stats["total_tasks"] == 7
+    assert stats["total_tasks"] == len(SEED_TASKS) - 1
     assert stats["total_attempts"] == 1  # сама попытка в истории остаётся
 
 
@@ -161,3 +162,41 @@ def test_day_uses_moscow_time(client, fake_redis, db):
 def test_streak(days_ago, expected):
     today = date(2026, 10, 22)
     assert _streak({today - timedelta(days=d) for d in days_ago}, today) == expected
+
+
+# ---------- Фильтр «решённые / нерешённые» ----------
+
+def _ids(client, url, headers):
+    response = client.get(url, headers=headers)
+    assert response.status_code == 200, response.text
+    page = response.json()
+    return page["total"], [t["id"] for t in page["items"]]
+
+
+def test_progress_filter(client, fake_redis, db):
+    me = login(client, fake_redis, db)
+    # В номере 1 три задачи: одну решим, в одной ошибёмся, третью не тронем.
+    ids = [
+        client.post("/tasks", json={"exam_number": "1", "statement": f"З{i}", "correct_answer": "1"}).json()["id"]
+        for i in range(3)
+    ]
+    solved, failed, untouched = ids
+    answer(client, solved, "1", me)
+    answer(client, failed, "2", me)
+
+    assert _ids(client, "/numbers/1/tasks?progress=solved", me) == (1, [solved])
+    total, unsolved = _ids(client, "/numbers/1/tasks?progress=unsolved&sort=old", me)
+    assert total == 2 and unsolved == [failed, untouched]
+    assert _ids(client, "/numbers/1/tasks", me)[0] == 3
+
+
+def test_progress_filter_combines_with_source(client, fake_redis, db):
+    me = login(client, fake_redis, db)
+    answer(client, 3, "768", me)  # задача номера 7 из демоверсии — решена
+    assert _ids(client, "/numbers/7/tasks?progress=solved&source=demo", me)[0] == 1
+    assert _ids(client, "/numbers/7/tasks?progress=unsolved&source=demo", me)[0] == 0
+
+
+def test_progress_filter_needs_login(client):
+    assert client.get("/numbers/1/tasks?progress=solved").status_code == 401
+    assert client.get("/numbers/1/tasks?progress=whatever").status_code == 422

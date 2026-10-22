@@ -1,0 +1,50 @@
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from redis import Redis
+from sqlalchemy.orm import Session
+
+from app.core.db import get_db
+from app.core.redis import get_redis
+from app.modules.auth.deps import get_optional_user
+from app.modules.auth.models import User
+from app.modules.rating import service
+
+router = APIRouter(prefix="/rating", tags=["Рейтинг"])
+
+
+class RatingRow(BaseModel):
+    place: int
+    user_id: int
+    first_name: str
+    username: str | None
+    points: int
+    is_me: bool
+
+
+class MyPlace(BaseModel):
+    place: int | None  # None — ещё нет очков
+    points: int
+
+
+class Rating(BaseModel):
+    period: Literal["week", "all"]
+    participants: int
+    top: list[RatingRow]
+    me: MyPlace | None
+
+
+@router.get("", response_model=Rating)
+def get_rating(
+    period: Literal["week", "all"] = "week",
+    limit: int = Query(20, ge=1, le=100),
+    r: Redis = Depends(get_redis),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    """Таблица лидеров. Очко — за каждую задачу, решённую впервые.
+
+    Вошедшему ученику в поле me — его место, даже если он не в топе.
+    """
+    return service.leaderboard(r, db, period, limit, user.id if user else None)

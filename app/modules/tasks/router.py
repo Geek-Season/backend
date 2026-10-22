@@ -11,18 +11,22 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user
 from app.modules.auth.models import User
 from app.modules.progress import service as progress
+from app.modules.rating import service as rating
 from app.modules.tasks import service
 from app.modules.tasks.models import Task
 from app.modules.tasks.schemas import (
     AnswerResult,
     AnswerSubmission,
     ExamNumberRead,
+    ProgressFilter,
     Sort,
     Source,
     TaskAdminRead,
@@ -70,6 +74,11 @@ def get_number_tasks(
     code: str,
     source: Source | None = None,
     sort: Sort = "new",
+    progress_filter: ProgressFilter | None = Query(
+        None,
+        alias="progress",
+        description="Только для вошедших: solved — решённые, unsolved — ещё не решённые",
+    ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -80,7 +89,19 @@ def get_number_tasks(
     if number is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Номер ЕГЭ не найден")
 
-    total, tasks = service.list_number_tasks(db, number, source, sort, limit, offset)
+    only_ids = except_ids = None
+    if progress_filter is not None:
+        if user is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Войдите, чтобы фильтровать по прогрессу")
+        solved_ids = progress.solved_task_ids(user.id)
+        if progress_filter == "solved":
+            only_ids = solved_ids
+        else:
+            except_ids = solved_ids
+
+    total, tasks = service.list_number_tasks(
+        db, number, source, sort, limit, offset, only_ids=only_ids, except_ids=except_ids
+    )
     items = [TaskRead.model_validate(task) for task in tasks]
     solved = 0
     if user is not None:
@@ -113,6 +134,7 @@ def check_task(
     submission: AnswerSubmission,
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
+    r: Redis = Depends(get_redis),
 ):
     """Проверить ответ. Код 200 значит «запрос обработан»; верность — в поле is_correct.
 
@@ -121,7 +143,9 @@ def check_task(
     task = _task_or_404(task_id, db)
     result = service.check_answer(task, submission.answer)
     if user is not None:
-        progress.record_attempt(db, user.id, task.id, submission.answer, result["is_correct"])
+        first_solve = progress.record_attempt(db, user.id, task.id, submission.answer, result["is_correct"])
+        if first_solve:
+            rating.add_point(r, user.id)
     return result
 
 

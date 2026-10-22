@@ -17,6 +17,15 @@ class NumberProgress(BaseModel):
     solved: int = Field(description="Сколько задач номера решено верно")
 
 
+class WeakNumber(BaseModel):
+    code: str
+    title: str
+    attempts: int
+    correct: int
+    accuracy: float
+    unsolved_tasks: int = Field(description="Задач номера, которые пробовал, но не решил")
+
+
 class RecentAttempt(BaseModel):
     task_id: int
     exam_number: str
@@ -36,4 +45,5 @@ class UserStats(BaseModel):
     active_days: int
     activity: list[DayActivity] = Field(description="Последние 14 дней, по порядку")
     by_number: list[NumberProgress]
+    weak_numbers: list[WeakNumber] = Field(description="Что повторить: до 5 номеров, сначала самые проблемные")
     recent: list[RecentAttempt]

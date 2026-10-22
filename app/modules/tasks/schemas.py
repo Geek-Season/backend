@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Source = Literal["demo", "official", "author"]
 Sort = Literal["new", "old", "easy", "hard"]
+# Фильтр по прогрессу ученика: solved — решённые, unsolved — ещё не решённые верно.
+ProgressFilter = Literal["solved", "unsolved"]
 
 
 # ---------- Номера ЕГЭ ----------

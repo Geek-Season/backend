@@ -5,7 +5,7 @@
 занимается router.py. Так логику легко проверять тестами.
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.modules.tasks.answers import answers_match
@@ -71,14 +71,25 @@ def list_number_tasks(
     sort: Sort,
     limit: int,
     offset: int,
+    only_ids: Select | None = None,
+    except_ids: Select | None = None,
 ) -> tuple[int, list[Task]]:
-    """Прототипы одного номера с фильтром, сортировкой и постраничным выводом."""
+    """Прототипы одного номера с фильтром, сортировкой и постраничным выводом.
+
+    only_ids / except_ids — подзапросы со списком id задач: оставить только их
+    или, наоборот, убрать. Так модуль прогресса передаёт «решённые задачи ученика»,
+    а банк заданий не знает, как они считаются.
+    """
     query = select(Task).where(
         Task.exam_number_id == number.id,
         Task.is_archived.is_(False),
     )
     if source is not None:
         query = query.where(Task.source == source)
+    if only_ids is not None:
+        query = query.where(Task.id.in_(only_ids))
+    if except_ids is not None:
+        query = query.where(Task.id.not_in(except_ids))
 
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     tasks = db.scalars(
