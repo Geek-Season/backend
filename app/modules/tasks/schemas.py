@@ -23,6 +23,7 @@ class ExamNumberRead(BaseModel):
     code: str
     title: str
     tasks_count: int
+    solved: int = Field(default=0, description="Сколько задач номера решил вошедший ученик (0, если не вошёл)")
 
 
 # ---------- Задачи ----------
@@ -42,6 +43,10 @@ class TaskRead(BaseModel):
     source: Source
     source_label: str | None
     difficulty: int
+    status: Literal["solved", "failed"] | None = Field(
+        default=None,
+        description="Для вошедшего ученика: solved — решена, failed — пробовал, но неверно",
+    )
 
 
 class TaskPage(BaseModel):

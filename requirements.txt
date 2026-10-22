@@ -8,6 +8,8 @@ pydantic-settings==2.11.0
 sqlalchemy==2.0.44
 psycopg[binary]==3.2.12
 alembic==1.17.1
+# Часовые пояса (нужно для «дней» в статистике; на Windows и в Docker своих нет)
+tzdata==2026.5
 
 # Вход через Telegram
 redis==8.1.0

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me-in-env-file-0123456789"
     jwt_expire_days: int = 7
 
+    # Часовой пояс, по которому статистика считает «дни» (серия, график активности).
+    timezone: str = "Europe/Moscow"
+
     # Сколько секунд живут QR-ключ и код из бота.
     login_ttl_seconds: int = 300
     # Сколько попыток ввести код можно сделать за минуту с одного адреса.

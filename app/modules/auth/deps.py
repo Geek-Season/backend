@@ -20,6 +20,21 @@ from app.modules.auth.tokens import read_user_id
 bearer = HTTPBearer(auto_error=False)
 
 
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Как get_current_user, но для адресов, открытых всем.
+
+    Вошёл — вернёт пользователя (например, чтобы сохранить его ответ),
+    не вошёл или токен устарел — вернёт None, без ошибки.
+    """
+    if credentials is None:
+        return None
+    user_id = read_user_id(credentials.credentials)
+    return get_user(db, user_id) if user_id is not None else None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: Session = Depends(get_db),

@@ -14,6 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.modules.auth.deps import get_optional_user
+from app.modules.auth.models import User
+from app.modules.progress import service as progress
 from app.modules.tasks import service
 from app.modules.tasks.models import Task
 from app.modules.tasks.schemas import (
@@ -49,9 +52,17 @@ def _unknown_number(code: str | None) -> HTTPException:
 # ---------- Номера ----------
 
 @numbers_router.get("", response_model=list[ExamNumberRead])
-def get_numbers(db: Session = Depends(get_db)):
-    """Все номера ЕГЭ по порядку — карточки страницы «Задания»."""
-    return service.list_numbers(db)
+def get_numbers(db: Session = Depends(get_db), user: User | None = Depends(get_optional_user)):
+    """Все номера ЕГЭ по порядку — карточки страницы «Задания».
+
+    Для вошедшего ученика в поле solved — сколько задач номера он решил.
+    """
+    numbers = service.list_numbers(db)
+    if user is not None:
+        solved = progress.solved_by_number(db, user.id)
+        for number in numbers:
+            number["solved"] = solved.get(number["id"], 0)
+    return numbers
 
 
 @numbers_router.get("/{code}/tasks", response_model=TaskPage)
@@ -62,6 +73,7 @@ def get_number_tasks(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ):
     """Прототипы номера. Ответы и разборы не отдаются."""
     number = service.get_number(db, code)
@@ -69,14 +81,22 @@ def get_number_tasks(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Номер ЕГЭ не найден")
 
     total, tasks = service.list_number_tasks(db, number, source, sort, limit, offset)
+    items = [TaskRead.model_validate(task) for task in tasks]
+    solved = 0
+    if user is not None:
+        statuses = progress.task_statuses(db, user.id, [t.id for t in items])
+        items = [t.model_copy(update={"status": statuses.get(t.id)}) for t in items]
+        solved = progress.solved_by_number(db, user.id).get(number.id, 0)
+
     return {
         "number": {
             "code": number.code,
             "title": number.title,
             "tasks_count": service.count_number_tasks(db, number),
+            "solved": solved,
         },
         "total": total,
-        "items": tasks,
+        "items": items,
     }
 
 
@@ -88,10 +108,21 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @tasks_router.post("/{task_id}/check", response_model=AnswerResult)
-def check_task(task_id: int, submission: AnswerSubmission, db: Session = Depends(get_db)):
-    """Проверить ответ. Код 200 значит «запрос обработан»; верность — в поле is_correct."""
+def check_task(
+    task_id: int,
+    submission: AnswerSubmission,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
+    """Проверить ответ. Код 200 значит «запрос обработан»; верность — в поле is_correct.
+
+    Если ученик вошёл, ответ сохраняется в его статистику.
+    """
     task = _task_or_404(task_id, db)
-    return service.check_answer(task, submission.answer)
+    result = service.check_answer(task, submission.answer)
+    if user is not None:
+        progress.record_attempt(db, user.id, task.id, submission.answer, result["is_correct"])
+    return result
 
 
 @tasks_router.post("", response_model=TaskAdminRead, status_code=status.HTTP_201_CREATED)

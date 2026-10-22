@@ -37,7 +37,7 @@ def list_numbers(db: Session) -> list[dict]:
         .order_by(ExamNumber.position)
     ).all()
     return [
-        {"code": number.code, "title": number.title, "tasks_count": count}
+        {"id": number.id, "code": number.code, "title": number.title, "tasks_count": count}
         for number, count in rows
     ]
 
