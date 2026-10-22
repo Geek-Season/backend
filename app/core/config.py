@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     jwt_expire_days: int = 7
 
     # Длительность пробника в минутах. На ЕГЭ по информатике — 235 (3 ч 55 мин).
-    # Для показа можно поставить 5 в .env: EXAM_DURATION_MINUTES=5
+    # Переопределяется в .env: EXAM_DURATION_MINUTES
     exam_duration_minutes: int = 235
 
     # Часовой пояс, по которому статистика считает «дни» (серия, график активности).
