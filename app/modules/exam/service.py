@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.modules.exam.models import ExamAnswer, ExamSession
+from app.modules.exam.scale import FULL_PRIMARY_MAX, MIN_PASSING, MIN_UNIVERSITY, to_test_score
 from app.modules.progress import service as progress
 from app.modules.rating import service as rating
 from app.modules.tasks.answers import answers_match
@@ -221,6 +222,23 @@ def history(db: Session, user_id: int) -> list[ExamSession]:
     ))
 
 
+def test_score_fields(session: ExamSession) -> dict:
+    """Тестовый балл по официальной шкале.
+
+    Шкала рассчитана на полный вариант (29 первичных). Если в банке есть не все
+    номера, вариант меньше — тестовый балл помечается как приблизительный.
+    """
+    if session.primary_score is None:
+        return {"test_score": None, "test_score_approximate": None, "passed": None, "university_passed": None}
+    test = to_test_score(session.primary_score)
+    return {
+        "test_score": test,
+        "test_score_approximate": session.max_score < FULL_PRIMARY_MAX,
+        "passed": test >= MIN_PASSING,
+        "university_passed": test >= MIN_UNIVERSITY,
+    }
+
+
 def to_view(session: ExamSession) -> dict:
     """Пробник для API. Ответы и разборы — только после завершения."""
     finished = session.finished_at is not None
@@ -257,6 +275,7 @@ def to_view(session: ExamSession) -> dict:
         "duration_minutes": round((session.deadline_at - session.started_at).total_seconds() / 60),
         "max_score": session.max_score,
         "primary_score": session.primary_score,
+        **test_score_fields(session),
         "answered": sum(1 for a in session.answers if a.answer),
         "items": items,
     }

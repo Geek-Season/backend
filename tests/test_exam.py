@@ -162,3 +162,28 @@ def test_double_click_is_blocked(client, login, fake_redis):
     user_id = client.get("/auth/me", headers=me).json()["id"]
     fake_redis.set(f"exam:start_lock:{user_id}", 1)  # как будто первый запрос ещё создаёт пробник
     assert client.post("/exam/start", headers=me).status_code == 409
+
+
+# ---------- Тестовые баллы ----------
+
+def test_official_scale():
+    from app.modules.exam.scale import to_test_score
+    assert [to_test_score(p) for p in (0, 1, 6, 8, 18, 29)] == [0, 7, 40, 46, 72, 100]
+    assert to_test_score(35) == 100 and to_test_score(-1) == 0
+
+
+def test_result_has_test_score(client, login, db):
+    me = login()
+    exam = start(client, me).json()
+    assert exam["test_score"] is None  # до завершения не считаем
+    answers = correct_answers(db)
+    for item in exam["items"]:
+        if item["exam_number"] in {"26", "27", "5", "8"}:  # 2 + 2 + 1 + 1 = 6 первичных
+            client.put(f"/exam/{exam['id']}/answers/{item['position']}",
+                       json={"answer": answers[item["task_id"]]}, headers=me)
+    result = client.post(f"/exam/{exam['id']}/finish", headers=me).json()
+    assert result["primary_score"] == 6
+    assert result["test_score"] == 40
+    assert result["passed"] is True and result["university_passed"] is False
+    assert result["test_score_approximate"] is True  # в банке не все 27 номеров
+    assert client.get("/exam/history", headers=me).json()[0]["test_score"] == 40

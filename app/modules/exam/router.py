@@ -51,6 +51,12 @@ class ExamView(BaseModel):
     duration_minutes: int
     max_score: int
     primary_score: int | None
+    test_score: int | None = Field(description="Тестовый балл по шкале Рособрнадзора 2026 (после завершения)")
+    test_score_approximate: bool | None = Field(
+        description="true — в варианте меньше 29 первичных баллов (в банке не все номера), балл приблизительный"
+    )
+    passed: bool | None = Field(description="Порог Рособрнадзора: 40 тестовых")
+    university_passed: bool | None = Field(description="Порог для поступления в вуз: 46 тестовых")
     answered: int
     items: list[ExamItem]
 
@@ -61,6 +67,8 @@ class ExamHistoryItem(BaseModel):
     finished_at: datetime
     primary_score: int
     max_score: int
+    test_score: int
+    test_score_approximate: bool
     tasks_count: int
 
 
@@ -119,6 +127,8 @@ def exam_history(user: User = Depends(get_current_user), db: Session = Depends(g
             "finished_at": s.finished_at,
             "primary_score": s.primary_score,
             "max_score": s.max_score,
+            "test_score": service.test_score_fields(s)["test_score"],
+            "test_score_approximate": service.test_score_fields(s)["test_score_approximate"],
             "tasks_count": len(s.answers),
         }
         for s in service.history(db, user.id)
