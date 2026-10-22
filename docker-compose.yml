@@ -1,0 +1,34 @@
+# Запуск всего проекта одной командой:  docker compose up --build
+# Сайт API:  http://localhost:8000/docs
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: geek
+      POSTGRES_PASSWORD: geek
+      POSTGRES_DB: geek_season
+    ports:
+      - "5433:5432"          # чтобы подключаться к базе из PyCharm / DBeaver
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # данные переживают перезапуск
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geek -d geek_season"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build: .
+    environment:
+      # Внутри Docker база доступна по имени сервиса «db», а не localhost.
+      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy   # ждём, пока база реально готова
+
+volumes:
+  pgdata:

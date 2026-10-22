@@ -1,0 +1,14 @@
+# Веб-сервер и API
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.5
+pydantic-settings==2.11.0
+
+# База данных
+sqlalchemy==2.0.44
+psycopg[binary]==3.2.12
+alembic==1.17.1
+
+# Тесты
+pytest==8.4.2
+httpx2==2.16.0
