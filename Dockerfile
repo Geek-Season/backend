@@ -9,5 +9,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# На сервере запросы приходят через прокси хостинга (HTTPS → контейнер).
+# Uvicorn должен брать настоящий адрес ученика из заголовка X-Forwarded-For —
+# иначе у всех будет адрес прокси и лимит «5 попыток кода в минуту» станет общим.
+ENV FORWARDED_ALLOW_IPS="*"
+
 # При старте: применить миграции → наполнить базу → запустить сервер.
-CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# exec — чтобы сигнал остановки от Docker дошёл до uvicorn и он завершился аккуратно.
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]

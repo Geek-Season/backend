@@ -1,18 +1,33 @@
 # Запуск всего проекта одной командой:  docker compose up --build
 # API:  http://localhost:8000/docs
 #
-# Секреты (BOT_TOKEN, BOT_USERNAME, JWT_SECRET) берутся из файла .env рядом.
+# Этот файл — для сервера (Netrun и любой другой хостинг): наружу открыт только
+# api на порту 8000. База, Redis и RabbitMQ видны лишь внутри сети Docker.
+#
+# Для разработки на компьютере добавляется docker-compose.dev.yml — он открывает
+# порты базы, Redis и RabbitMQ (для PyCharm / DBeaver / тестов). Чтобы он
+# подключался сам, в .env есть строки COMPOSE_FILE и COMPOSE_PATH_SEPARATOR
+# (см. .env.example).
+#
+# Секреты (BOT_TOKEN, BOT_USERNAME, JWT_SECRET, пароли) берутся из файла .env рядом
+# или из секретов хостинга.
+
+x-app-env: &app-env
+  # Внутри Docker сервисы видят друг друга по именам «db», «redis», «rabbitmq», а не localhost.
+  DATABASE_URL: postgresql+psycopg://geek:${DB_PASSWORD:-geek}@db:5432/geek_season
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: amqp://geek:${RABBITMQ_PASSWORD:-geek}@rabbitmq:5672/
+  # production: сервер не запустится без своего JWT_SECRET (см. app/core/config.py).
+  APP_ENV: ${APP_ENV:-production}
 
 services:
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: geek
-      POSTGRES_PASSWORD: geek
+      # Пароль задаётся только при ПЕРВОМ создании базы (пустой том pgdata).
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-geek}
       POSTGRES_DB: geek_season
-    ports:
-      # Снаружи порт 5433, а не 5432: 5432 часто занят PostgreSQL, установленным на компьютер.
-      - "5433:5432"          # чтобы подключаться к базе из PyCharm / DBeaver / pgAdmin
     volumes:
       - pgdata:/var/lib/postgresql/data   # данные переживают перезапуск
       - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
@@ -21,25 +36,24 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"          # снаружи 6380 — на случай, если 6379 уже занят
+    volumes:
+      - redisdata:/data                   # рейтинг и идущие пробники переживают перезапуск
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 3s
       retries: 15
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: geek
-      RABBITMQ_DEFAULT_PASS: geek
-    ports:
-      - "5672:5672"          # для API и воркера, запущенных на компьютере
-      - "15672:15672"        # веб-панель: http://localhost:15672 (geek / geek)
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-geek}
     volumes:
       - rabbitdata:/var/lib/rabbitmq   # очереди переживают перезапуск
     healthcheck:
@@ -47,17 +61,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
 
   api:
     build: .
     env_file:
       - path: .env
         required: false
-    environment:
-      # Внутри Docker сервисы видят друг друга по именам «db» и «redis», а не localhost.
-      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
-      REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
+    environment: *app-env
     ports:
       - "8000:8000"
     volumes:
@@ -69,6 +80,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
 
   bot:
     build: .
@@ -76,10 +88,7 @@ services:
     env_file:
       - path: .env
         required: false
-    environment:
-      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
-      REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
+    environment: *app-env
     depends_on:
       api:
         condition: service_started   # api при старте применяет миграции
@@ -91,10 +100,7 @@ services:
     env_file:
       - path: .env
         required: false
-    environment:
-      DATABASE_URL: postgresql+psycopg://geek:geek@db:5432/geek_season
-      REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
+    environment: *app-env
     depends_on:
       api:
         condition: service_started   # api применяет миграции и заполняет справочники
@@ -104,5 +110,6 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
   rabbitdata:
   uploads:

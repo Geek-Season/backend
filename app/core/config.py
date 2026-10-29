@@ -7,7 +7,14 @@
 Секреты (токен бота, ключ JWT) живут ТОЛЬКО в .env — он не попадает в Git.
 """
 
+from typing import Literal
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Ключ только для разработки. Он в открытом репозитории — на сервере его использовать нельзя.
+DEV_JWT_SECRET = "dev-secret-change-me-in-env-file-0123456789"
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -37,8 +44,33 @@ class Settings(BaseSettings):
         return {int(part) for part in self.admin_telegram_ids.replace(" ", "").split(",") if part}
 
     # Ключ для подписи токенов входа (JWT). В .env задай свою длинную случайную строку.
-    jwt_secret: str = "dev-secret-change-me-in-env-file-0123456789"
+    jwt_secret: str = DEV_JWT_SECRET
     jwt_expire_days: int = 7
+
+    # development — компьютер разработчика; production — сервер.
+    # В production сервер не запустится со стандартным JWT_SECRET: этот ключ лежит
+    # в открытом репозитории, и с ним любой подделал бы вход администратора.
+    app_env: Literal["development", "production"] = "development"
+
+    # С каких сайтов браузеру можно обращаться к API (CORS), через запятую:
+    # CORS_ORIGINS=https://geek-season.github.io
+    # Нужно, когда сайт и API на разных адресах (сайт — GitHub Pages, API — Netrun).
+    cors_origins: str = ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def check_production_secrets(self):
+        if self.app_env == "production" and (
+            self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH
+        ):
+            raise ValueError(
+                f"APP_ENV=production: задайте свой JWT_SECRET длиной от {MIN_JWT_SECRET_LENGTH} символов. "
+                'Сгенерировать: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return self
 
     # Длительность пробника в минутах. На ЕГЭ по информатике — 235 (3 ч 55 мин).
     # Переопределяется в .env: EXAM_DURATION_MINUTES

@@ -20,13 +20,17 @@ aiogram 3, PyJWT, pytest.
 | `ADMIN_TELEGRAM_IDS` | Telegram ID администраторов через запятую |
 | `JWT_SECRET` | Ключ подписи токенов |
 | `EXAM_DURATION_MINUTES` | Длительность пробника, по умолчанию 235 |
+| `APP_ENV` | `development` или `production`; в production обязателен свой `JWT_SECRET` (от 32 символов) |
+| `CORS_ORIGINS` | Адреса сайта через запятую, если сайт и API на разных адресах |
+| `DB_PASSWORD`, `RABBITMQ_PASSWORD` | Пароли PostgreSQL и RabbitMQ в Docker (по умолчанию `geek`) |
 | `TIMEZONE` | Часовой пояс для подсчёта дней в статистике, по умолчанию Europe/Moscow |
 | `UPLOAD_DIR` | Папка для картинок и файлов к задачам, по умолчанию `uploads` (в Docker — том `uploads`) |
 | `MAX_IMAGE_MB`, `MAX_ATTACHMENT_MB` | Ограничения на размер: картинка 5 МБ, файл к заданию 20 МБ |
 
 ## Запуск
 
-Вся система в Docker:
+Вся система в Docker. Скопируй `.env.example` в `.env` (в нём уже подключён `docker-compose.dev.yml`
+с портами для разработки) и запусти:
 
 ```bash
 docker compose up --build
@@ -35,10 +39,16 @@ docker compose up --build
 Поднимаются контейнеры `db`, `redis`, `rabbitmq`, `api`, `bot`, `worker`. При старте `api` применяет
 миграции и заполняет справочник номеров и стартовый набор задач (`app/seed.py`).
 
+> `docker-compose.yml` сам по себе — серверный вариант: наружу открыт только API, и без своего
+> `JWT_SECRET` ничего не запустится. Если твой `.env` создан раньше, добавь в него три первые
+> строки из `.env.example` (`COMPOSE_PATH_SEPARATOR`, `COMPOSE_FILE`, `APP_ENV`).
+
+Деплой на сервер (Netrun) — в [DEPLOY.md](DEPLOY.md).
+
 | Адрес | Что там |
 |---|---|
 | <http://localhost:8000/docs> | Swagger UI |
-| <http://localhost:15672> | Панель RabbitMQ |
+| <http://localhost:15672> | Панель RabbitMQ (только с `docker-compose.dev.yml`) |
 
 Для разработки инфраструктура остаётся в Docker, процессы приложения запускаются локально:
 
@@ -143,4 +153,4 @@ pytest
 ```
 
 Тесты работают на отдельной базе `geek_test`, Redis заменён на fakeredis, RabbitMQ — на перехват событий.
-147 тестов, включая негативные сценарии.
+157 тестов, включая негативные сценарии.
