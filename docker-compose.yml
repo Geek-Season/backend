@@ -50,17 +50,22 @@ services:
     restart: unless-stopped
 
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    # Без веб-панели (management): меньше памяти и быстрее старт. На сервере панель всё равно
+    # не открыть снаружи; для разработки её включает docker-compose.dev.yml.
+    image: rabbitmq:3.13-alpine
     environment:
       RABBITMQ_DEFAULT_USER: geek
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-geek}
     volumes:
       - rabbitdata:/var/lib/rabbitmq   # очереди переживают перезапуск
     healthcheck:
+      # Каждая проверка запускает отдельную Erlang-машину — на слабом сервере это несколько секунд.
+      # start_period: первую минуту неудачные проверки не считаются — RabbitMQ ещё загружается.
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+      interval: 10s
+      timeout: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   api:
@@ -78,8 +83,10 @@ services:
         condition: service_healthy   # ждём, пока база реально готова
       redis:
         condition: service_healthy
+      # Не ждём, пока RabbitMQ будет готов: API работает и без брокера (события просто
+      # не отправятся), а при первой же возможности переподключится сам.
       rabbitmq:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
   bot:
@@ -105,7 +112,7 @@ services:
       api:
         condition: service_started   # api применяет миграции и заполняет справочники
       rabbitmq:
-        condition: service_healthy
+        condition: service_started   # воркер сам ждёт брокер и переподключается каждые 5 секунд
     restart: on-failure
 
 volumes:
