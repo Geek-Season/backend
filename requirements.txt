@@ -3,6 +3,8 @@ fastapi==0.141.1
 uvicorn==0.53.0
 pydantic==2.13.5
 pydantic-settings==2.11.0
+# Загрузка файлов (multipart/form-data): картинки и файлы к задачам
+python-multipart==0.0.32
 
 # База данных
 sqlalchemy==2.0.44

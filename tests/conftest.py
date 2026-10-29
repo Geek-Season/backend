@@ -33,6 +33,16 @@ def clean_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def upload_dir(tmp_path, monkeypatch):
+    """Загруженные в тестах файлы — во временную папку, а не в рабочую uploads/."""
+    from app.core.config import settings
+
+    path = tmp_path / "uploads"
+    monkeypatch.setattr(settings, "upload_dir", str(path))
+    return path
+
+
 @pytest.fixture
 def fake_redis():
     r = fakeredis.FakeRedis(decode_responses=True)

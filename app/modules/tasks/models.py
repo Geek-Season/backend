@@ -5,6 +5,7 @@
 Задача номеров 19–21 состоит из общего условия игры и трёх вопросов — частей.
 
     exam_numbers 1 ──── * tasks 1 ──── * task_parts
+                                1 ──── * task_files   (картинки и файлы к задаче)
 """
 
 from datetime import datetime
@@ -60,11 +61,23 @@ class Task(Base):
     parts: Mapped[list["TaskPart"]] = relationship(
         back_populates="task", order_by="TaskPart.number", cascade="all, delete-orphan"
     )
+    # Загруженные картинки и файлы к задаче (по порядку загрузки).
+    files: Mapped[list["TaskFile"]] = relationship(
+        back_populates="task", order_by="(TaskFile.position, TaskFile.id)", cascade="all, delete-orphan"
+    )
 
     @property
     def exam_code(self) -> str:
         """Код номера («1», «19-21») — удобно отдавать в API вместо id."""
         return self.exam_number.code
+
+    @property
+    def images(self) -> list["TaskFile"]:
+        return [f for f in self.files if f.kind == FILE_IMAGE]
+
+    @property
+    def attachments(self) -> list["TaskFile"]:
+        return [f for f in self.files if f.kind == FILE_ATTACHMENT]
 
 
 class TaskPart(Base):
@@ -84,3 +97,39 @@ class TaskPart(Base):
     explanation: Mapped[str] = mapped_column(Text, default="")
 
     task: Mapped[Task] = relationship(back_populates="parts")
+
+
+FILE_IMAGE = "image"            # картинка: показывается прямо в условии
+FILE_ATTACHMENT = "attachment"  # файл к заданию (xlsx, txt, docx…): ученик скачивает
+
+
+class TaskFile(Base):
+    """Картинка или файл, загруженный к задаче.
+
+    Сам файл лежит на диске сервера (папка settings.upload_dir) под случайным
+    именем stored_name, а в базе — его описание. Ученику отдаётся по адресу
+    GET /files/{stored_name}; для файлов-заданий — с исходным именем original_name.
+    """
+
+    __tablename__ = "task_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # image | attachment
+    # Случайное имя на диске: 32 hex-символа + расширение. Не угадать и не пересечься.
+    stored_name: Mapped[str] = mapped_column(String(64), unique=True)
+    # Как файл назывался у автора — с этим именем его скачает ученик («17.txt»).
+    original_name: Mapped[str] = mapped_column(String(200))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)  # байт
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    task: Mapped[Task] = relationship(back_populates="files")
+
+    @property
+    def url(self) -> str:
+        """Адрес файла в API (сайт добавляет к нему свой префикс /api)."""
+        return f"/files/{self.stored_name}"

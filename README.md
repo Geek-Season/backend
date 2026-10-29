@@ -21,6 +21,8 @@ aiogram 3, PyJWT, pytest.
 | `JWT_SECRET` | Ключ подписи токенов |
 | `EXAM_DURATION_MINUTES` | Длительность пробника, по умолчанию 235 |
 | `TIMEZONE` | Часовой пояс для подсчёта дней в статистике, по умолчанию Europe/Moscow |
+| `UPLOAD_DIR` | Папка для картинок и файлов к задачам, по умолчанию `uploads` (в Docker — том `uploads`) |
+| `MAX_IMAGE_MB`, `MAX_ATTACHMENT_MB` | Ограничения на размер: картинка 5 МБ, файл к заданию 20 МБ |
 
 ## Запуск
 
@@ -58,6 +60,7 @@ python -m app.worker             # обработчик очередей
 |---|---|
 | Банк заданий | `GET /numbers`, `GET /numbers/{code}/tasks`, `GET /tasks/{id}`, `POST /tasks/{id}/check` |
 | Редактор (admin) | `POST /tasks`, `PATCH /tasks/{id}`, `DELETE /tasks/{id}`, `GET /tasks/{id}/admin` |
+| Картинки и файлы | `POST /tasks/{id}/files` (admin), `DELETE /tasks/{id}/files/{file_id}` (admin), `GET /files/{name}` |
 | Вход | `POST /auth/telegram/start`, `GET /auth/telegram/status/{key}`, `POST /auth/code`, `GET /auth/me` |
 | Ученик | `GET /me/stats`, `GET /me/achievements`, `GET /me/notifications` |
 | Пробник | `POST /exam/start`, `GET /exam/current`, `GET /exam/history`, `GET /exam/{id}`, `PUT /exam/{id}/answers/{position}`, `POST /exam/{id}/finish` |
@@ -77,7 +80,7 @@ app/
 ├── worker/              обработчик очередей RabbitMQ
 └── modules/
     ├── auth/            users; QR-ключи и коды в Redis, JWT, роли
-    ├── tasks/           exam_numbers, tasks, task_parts; поиск, проверка ответов, редактор
+    ├── tasks/           exam_numbers, tasks, task_parts, task_files; поиск, проверка ответов, редактор, файлы
     ├── progress/        attempts; статистика, слабые номера
     ├── exam/            exam_sessions, exam_answers; вариант, таймер, баллы, шкала 2026
     ├── rating/          рейтинг в Redis sorted set
@@ -98,6 +101,11 @@ tests/                   автотесты
 **Проверка ответа.** Ответ разбивается по пробелам; числа сравниваются как числа (`0,25` = `0.25`),
 текст — без учёта регистра. Задача номеров 19–21 состоит из общего условия и трёх вопросов
 (`task_parts`), каждый проверяется отдельно.
+
+**Картинки и файлы к задачам.** Администратор загружает их в редакторе. Картинки (PNG, JPEG, GIF, WebP
+до 5 МБ) показываются под условием; тип проверяется по содержимому файла, SVG не принимается. Файлы к заданию
+(xlsx, xls, ods, csv, txt, docx, doc, odt, pdf, zip до 20 МБ) ученик скачивает с исходным именем — как на ЕГЭ.
+На диске файл лежит под случайным именем, описание — в таблице `task_files`. До 10 картинок и 10 файлов на задачу.
 
 **Прогресс.** Каждый ответ вошедшего ученика сохраняется в `attempts`. Задача решена при наличии верной попытки.
 Номер считается слабым, если в нём есть нерешённая задача или точность ниже 60 % при трёх и более ответах.
@@ -135,4 +143,4 @@ pytest
 ```
 
 Тесты работают на отдельной базе `geek_test`, Redis заменён на fakeredis, RabbitMQ — на перехват событий.
-114 тестов, включая негативные сценарии.
+147 тестов, включая негативные сценарии.
