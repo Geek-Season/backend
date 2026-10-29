@@ -32,10 +32,6 @@ services:
     environment:
       APP_ENV: development
 
-  bot:
-    environment:
-      APP_ENV: development
-
   worker:
     environment:
       APP_ENV: development
