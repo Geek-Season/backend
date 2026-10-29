@@ -16,6 +16,7 @@ GIF и WebP; тип проверяется по содержимому файл�
 import re
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import UploadFile
 from sqlalchemy import func, select
@@ -80,6 +81,38 @@ def _clean_name(name: str | None, fallback: str) -> str:
     name = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
     name = "".join(ch for ch in name if ch.isprintable() and ch not in '"<>:|?*').strip(" .")
     return name[:200] or fallback
+
+
+_TRANSLIT = dict(zip(
+    "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+    ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t",
+     "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"],
+))
+
+
+def _ascii_fallback(name: str) -> str:
+    """«задание 9.xlsx» → «zadanie 9.xlsx»: имя для браузеров, не понимающих filename*."""
+    out = []
+    for ch in name:
+        low = ch.lower()
+        if low in _TRANSLIT:
+            t = _TRANSLIT[low]
+            out.append(t.capitalize() if ch != low else t)
+        elif ch.isascii() and ch.isprintable() and ch not in '"\\':
+            out.append(ch)
+        else:
+            out.append("_")
+    return "".join(out) or "file"
+
+
+def content_disposition(disposition: str, name: str) -> str:
+    """Заголовок Content-Disposition с именем файла по RFC 6266.
+
+    Два имени: filename — латиницей (запасное), filename* — настоящее, в UTF-8.
+    Только с filename* часть браузеров (например, Chromium при скачивании с другого
+    адреса — сайт на GitHub Pages, файл с API) сохраняет файл как «download».
+    """
+    return f"{disposition}; filename=\"{_ascii_fallback(name)}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 def _read_limited(upload: UploadFile, limit: int) -> bytes:
