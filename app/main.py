@@ -1,4 +1,7 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.core.config import settings
 
 from app.modules.achievements.router import router as achievements_router
 from app.modules.auth.router import router as auth_router
@@ -13,6 +16,18 @@ app = FastAPI(
     description="Подготовка к ЕГЭ по информатике: банк номеров, прототипы и проверка ответов.",
     version="0.7.0",
 )
+
+# Сайт на другом адресе (например, GitHub Pages), API — на сервере: браузеру нужно
+# разрешение обращаться к API с адреса сайта. Вход — по заголовку Authorization,
+# куки не используются, поэтому allow_credentials не нужен.
+if settings.cors_origin_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_methods=["*"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=3600,
+    )
 
 # Подключаем модули к одному приложению.
 app.include_router(auth_router)

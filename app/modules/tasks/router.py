@@ -255,9 +255,10 @@ def download_file(stored_name: str, db: Session = Depends(get_db)):
     return FileResponse(
         path,
         media_type=record.content_type,
-        filename=record.original_name,
-        content_disposition_type="inline" if is_image else "attachment",
         headers={
+            "Content-Disposition": files.content_disposition(
+                "inline" if is_image else "attachment", record.original_name
+            ),
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "public, max-age=31536000, immutable",
         },

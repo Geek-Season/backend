@@ -205,7 +205,16 @@ def test_download_attachment_with_original_name(admin_client, client, new_task):
     assert response.content == XLSX
     disposition = response.headers["content-disposition"]
     assert disposition.startswith("attachment")
-    assert "%D0%B7%D0%B0%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5%209.xlsx" in disposition  # «задание 9.xlsx»
+    assert "filename*=UTF-8''%D0%B7%D0%B0%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5%209.xlsx" in disposition  # «задание 9.xlsx»
+    assert 'filename="zadanie 9.xlsx"' in disposition  # запасное имя латиницей для старых браузеров
+
+
+def test_ascii_fallback_names():
+    from app.modules.tasks.files import _ascii_fallback
+
+    assert _ascii_fallback("Щука Ёж.txt") == "Shchuka Ezh.txt"
+    assert _ascii_fallback('17 "А".txt') == "17 _A_.txt"  # кавычки сломали бы заголовок
+    assert _ascii_fallback("日本.txt") == "__.txt"
 
 
 @pytest.mark.parametrize("path", [

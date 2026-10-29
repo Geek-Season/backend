@@ -1,0 +1,40 @@
+# Дополнение для разработки на компьютере. На сервер НЕ попадает.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# или один раз пропиши в .env (см. .env.example):
+#   COMPOSE_PATH_SEPARATOR=,
+#   COMPOSE_FILE=docker-compose.yml,docker-compose.dev.yml
+# и дальше просто  docker compose up --build
+#
+# Что добавляет:
+# - порты базы, Redis и RabbitMQ — чтобы подключаться из PyCharm / DBeaver / pgAdmin
+#   и запускать API, бота, воркер и тесты прямо на компьютере;
+# - APP_ENV=development — можно без своего JWT_SECRET.
+
+services:
+  db:
+    ports:
+      # Снаружи порт 5433, а не 5432: 5432 часто занят PostgreSQL, установленным на компьютер.
+      - "5433:5432"
+
+  redis:
+    ports:
+      - "6380:6379"          # снаружи 6380 — на случай, если 6379 уже занят
+
+  rabbitmq:
+    ports:
+      - "5672:5672"          # для API и воркера, запущенных на компьютере
+      - "15672:15672"        # веб-панель: http://localhost:15672 (geek / geek)
+
+  api:
+    environment:
+      APP_ENV: development
+
+  bot:
+    environment:
+      APP_ENV: development
+
+  worker:
+    environment:
+      APP_ENV: development
