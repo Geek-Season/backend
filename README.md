@@ -5,7 +5,7 @@
 рейтинг, достижения и уведомления в Telegram, редактор банка задач для администратора.
 
 **Стек:** Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 16, Redis 7, RabbitMQ 3.13 (pika),
-aiogram 3, PyJWT, pytest.
+Telegram Bot API (без сторонних библиотек), PyJWT, pytest.
 
 ## Конфигурация
 
@@ -88,7 +88,7 @@ app/
 ├── make_admin.py        назначение администратора из командной строки
 ├── core/                конфигурация, PostgreSQL, Redis, события RabbitMQ, Telegram Bot API
 ├── background.py        запуск бота и воркера в одном контейнере
-├── bot/                 Telegram-бот (aiogram)
+├── bot/                 Telegram-бот: long polling через Bot API, диагностика при запуске
 ├── worker/              обработчик очередей RabbitMQ
 └── modules/
     ├── auth/            users; QR-ключи и коды в Redis, JWT, роли
@@ -155,4 +155,4 @@ pytest
 ```
 
 Тесты работают на отдельной базе `geek_test`, Redis заменён на fakeredis, RabbitMQ — на перехват событий.
-161 тест, включая негативные сценарии.
+182 теста, включая негативные сценарии.
