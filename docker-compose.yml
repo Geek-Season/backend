@@ -89,28 +89,21 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  bot:
-    build: .
-    command: ["python", "-m", "app.bot"]
-    env_file:
-      - path: .env
-        required: false
-    environment: *app-env
-    depends_on:
-      api:
-        condition: service_started   # api при старте применяет миграции
-    restart: on-failure
-
+  # Фоновые процессы в одном контейнере (app/background.py):
+  #   - Telegram-бот: вход по QR и /login;
+  #   - воркер: достижения и уведомления из очередей RabbitMQ.
+  # Отдельного сервиса bot нет: хостинг его не запускал, а два бота с одним
+  # токеном мешали бы друг другу.
   worker:
     build: .
-    command: ["python", "-m", "app.worker"]   # достижения и уведомления из очередей RabbitMQ
+    command: ["python", "-m", "app.background"]
     env_file:
       - path: .env
         required: false
     environment: *app-env
     depends_on:
       api:
-        condition: service_started   # api применяет миграции и заполняет справочники
+        condition: service_started   # api применяет миграции и заполняет справочники (нужно и боту)
       rabbitmq:
         condition: service_started   # воркер сам ждёт брокер и переподключается каждые 5 секунд
     restart: on-failure

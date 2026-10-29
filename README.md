@@ -36,7 +36,7 @@ aiogram 3, PyJWT, pytest.
 docker compose up --build
 ```
 
-Поднимаются контейнеры `db`, `redis`, `rabbitmq`, `api`, `bot`, `worker`. При старте `api` применяет
+Поднимаются контейнеры `db`, `redis`, `rabbitmq`, `api`, `worker` (в нём Telegram-бот и обработчик очередей — `app/background.py`). При старте `api` применяет
 миграции и заполняет справочник номеров и стартовый набор задач (`app/seed.py`).
 
 > `docker-compose.yml` сам по себе — серверный вариант: наружу открыт только API, и без своего
@@ -59,6 +59,7 @@ alembic upgrade head
 python -m app.seed
 uvicorn app.main:app --reload    # API
 python -m app.bot                # Telegram-бот
+# или бот и воркер вместе, как в Docker:  python -m app.background
 python -m app.worker             # обработчик очередей
 ```
 
@@ -86,6 +87,7 @@ app/
 ├── seed.py              начальные данные
 ├── make_admin.py        назначение администратора из командной строки
 ├── core/                конфигурация, PostgreSQL, Redis, события RabbitMQ, Telegram Bot API
+├── background.py        запуск бота и воркера в одном контейнере
 ├── bot/                 Telegram-бот (aiogram)
 ├── worker/              обработчик очередей RabbitMQ
 └── modules/
@@ -153,4 +155,4 @@ pytest
 ```
 
 Тесты работают на отдельной базе `geek_test`, Redis заменён на fakeredis, RabbitMQ — на перехват событий.
-157 тестов, включая негативные сценарии.
+161 тест, включая негативные сценарии.
