@@ -122,7 +122,7 @@ def list_number_tasks(
 
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     tasks = db.scalars(
-        query.options(joinedload(Task.exam_number), selectinload(Task.parts))
+        query.options(joinedload(Task.exam_number), selectinload(Task.parts), selectinload(Task.files))
         .order_by(*_ORDER[sort])
         .limit(limit)
         .offset(offset)

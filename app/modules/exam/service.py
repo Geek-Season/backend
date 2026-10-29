@@ -71,6 +71,7 @@ def _load(db: Session, session_id: int) -> ExamSession | None:
         .where(ExamSession.id == session_id)
         .options(
             selectinload(ExamSession.answers).selectinload(ExamAnswer.task).selectinload(Task.exam_number),
+            selectinload(ExamSession.answers).selectinload(ExamAnswer.task).selectinload(Task.files),
             selectinload(ExamSession.answers).selectinload(ExamAnswer.part),
         )
     )
@@ -293,6 +294,8 @@ def to_view(session: ExamSession) -> dict:
             "statement": a.task.statement,
             "question": a.part.question if a.part else None,
             "image_url": a.task.image_url,
+            "images": a.task.images,
+            "attachments": a.task.attachments,
             "answer": a.answer,
         }
         if finished:

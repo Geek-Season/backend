@@ -8,9 +8,14 @@
 Одна задача:                          GET  /tasks/{id}
 Проверка ответа:                      POST /tasks/{id}/check
 Управление банком (только админ):     POST/PATCH/DELETE /tasks, GET /tasks/{id}/admin
+Картинки и файлы к задаче (админ):    POST /tasks/{id}/files, DELETE /tasks/{id}/files/{file_id}
+Скачать картинку или файл:            GET  /files/{имя}
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -21,8 +26,8 @@ from app.modules.auth.deps import get_optional_user, require_admin
 from app.modules.auth.models import User
 from app.modules.progress import service as progress
 from app.modules.rating import service as rating
-from app.modules.tasks import service
-from app.modules.tasks.models import Task
+from app.modules.tasks import files, service
+from app.modules.tasks.models import FILE_IMAGE, Task
 from app.modules.tasks.schemas import (
     AnswerResult,
     AnswerSubmission,
@@ -32,6 +37,7 @@ from app.modules.tasks.schemas import (
     Source,
     TaskAdminRead,
     TaskCreate,
+    TaskFileRead,
     TaskPage,
     TaskRead,
     TaskUpdate,
@@ -39,6 +45,7 @@ from app.modules.tasks.schemas import (
 
 numbers_router = APIRouter(prefix="/numbers", tags=["Номера ЕГЭ"])
 tasks_router = APIRouter(prefix="/tasks", tags=["Задачи"])
+files_router = APIRouter(prefix="/files", tags=["Файлы задач"])
 
 
 def _task_or_404(task_id: int, db: Session) -> Task:
@@ -198,3 +205,60 @@ def delete_task(task_id: int, db: Session = Depends(get_db), _admin: User = Depe
     task = _task_or_404(task_id, db)
     service.archive_task(db, task)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- Картинки и файлы к задаче (только админ) ----------
+
+@tasks_router.post("/{task_id}/files", response_model=TaskFileRead, status_code=status.HTTP_201_CREATED)
+def upload_task_file(
+    task_id: int,
+    file: UploadFile = File(description="Картинка (PNG, JPEG, GIF, WebP) или файл к заданию"),
+    kind: Literal["image", "attachment"] = Form(
+        description="image — показать в условии; attachment — файл для скачивания"
+    ),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Загрузить картинку или файл к задаче. Форма multipart/form-data: поля file и kind."""
+    task = _task_or_404(task_id, db)
+    try:
+        return files.save_file(db, task, file, kind)
+    except files.FileRejected as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@tasks_router.delete("/{task_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task_file(
+    task_id: int, file_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)
+):
+    """Удалить картинку или файл задачи (и из базы, и с диска)."""
+    _task_or_404(task_id, db)
+    record = files.get_task_file(db, task_id, file_id)
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
+    files.delete_file(db, record)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@files_router.get("/{stored_name}", response_class=FileResponse)
+def download_file(stored_name: str, db: Session = Depends(get_db)):
+    """Отдать картинку или файл задачи.
+
+    Картинки открываются в браузере, файлы к заданию скачиваются с исходным именем.
+    Имя на диске случайное и не меняется, поэтому браузер может хранить файл в кэше.
+    """
+    found = files.find_stored(db, stored_name)
+    if found is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
+    record, path = found
+    is_image = record.kind == FILE_IMAGE
+    return FileResponse(
+        path,
+        media_type=record.content_type,
+        filename=record.original_name,
+        content_disposition_type="inline" if is_image else "attachment",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )

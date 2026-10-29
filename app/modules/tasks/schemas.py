@@ -53,6 +53,21 @@ class PartIn(BaseModel):
     explanation: str = ""
 
 
+# ---------- Картинки и файлы ----------
+
+class TaskFileRead(BaseModel):
+    """Картинка или файл к задаче."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: Literal["image", "attachment"]
+    name: str = Field(validation_alias="original_name", description="Имя, с которым файл скачивается")
+    url: str = Field(description="Адрес файла в API, например /files/3f2a….xlsx")
+    size: int = Field(description="Размер в байтах")
+    content_type: str
+
+
 # ---------- Задачи ----------
 
 class TaskRead(BaseModel):
@@ -66,7 +81,9 @@ class TaskRead(BaseModel):
         description="Код номера ЕГЭ, например «1» или «19-21»",
     )
     statement: str
-    image_url: str | None
+    image_url: str | None = Field(description="Картинка по внешней ссылке (старый способ; новые — в images)")
+    images: list[TaskFileRead] = Field(default=[], description="Загруженные картинки — показываются в условии")
+    attachments: list[TaskFileRead] = Field(default=[], description="Файлы к заданию для скачивания")
     source: Source
     source_label: str | None
     difficulty: int

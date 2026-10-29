@@ -60,6 +60,8 @@ services:
       RABBITMQ_URL: amqp://geek:geek@rabbitmq:5672/
     ports:
       - "8000:8000"
+    volumes:
+      - uploads:/app/uploads             # картинки и файлы к задачам переживают пересборку
     depends_on:
       db:
         condition: service_healthy   # ждём, пока база реально готова
@@ -103,3 +105,4 @@ services:
 volumes:
   pgdata:
   rabbitdata:
+  uploads:

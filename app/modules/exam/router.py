@@ -21,6 +21,7 @@ from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.exam import service
 from app.modules.exam.models import ExamSession
+from app.modules.tasks.schemas import TaskFileRead
 
 router = APIRouter(prefix="/exam", tags=["Пробник"])
 
@@ -36,6 +37,8 @@ class ExamItem(BaseModel):
     statement: str
     question: str | None = Field(default=None, description="Для 19, 20, 21: вопрос к общему условию игры")
     image_url: str | None
+    images: list[TaskFileRead] = []
+    attachments: list[TaskFileRead] = []
     answer: str | None
     # Только после завершения:
     is_correct: bool | None = None
