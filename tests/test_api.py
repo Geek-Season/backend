@@ -27,6 +27,17 @@ def test_unknown_number_is_404(client):
     assert client.get("/numbers/99/tasks").status_code == 404
 
 
+def test_approbation_source(client, admin_client):
+    task = admin_client.post("/tasks", json={
+        "exam_number": "5", "statement": "Апробационная", "correct_answer": "1",
+        "source": "approbation", "source_label": "Апробация 04.03.26",
+    })
+    assert task.status_code == 201 and task.json()["source"] == "approbation"
+    page = client.get("/numbers/5/tasks?source=approbation").json()
+    assert page["total"] == 1 and page["items"][0]["source_label"] == "Апробация 04.03.26"
+    assert client.get("/numbers/5/tasks?source=fipi").status_code == 422
+
+
 def test_filter_by_source(client):
     assert client.get("/numbers/7/tasks?source=demo").json()["total"] == 1
     assert client.get("/numbers/7/tasks?source=official").json()["total"] == 0

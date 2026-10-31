@@ -44,7 +44,8 @@ class Task(Base):
     correct_answer: Mapped[str] = mapped_column(String(100))
     explanation: Mapped[str] = mapped_column(Text, default="")
 
-    # Откуда задача: demo (демоверсия), official (реальный экзамен), author (авторская).
+    # Откуда задача: demo (демоверсия), official (реальный экзамен),
+    # approbation (апробация), author (авторская).
     source: Mapped[str] = mapped_column(String(20), default="author")
     # Подпись к метке источника, например «Пересдача 08.07.26».
     source_label: Mapped[str | None] = mapped_column(String(100))
