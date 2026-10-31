@@ -243,3 +243,42 @@ def test_exam_items_have_files(admin_client, client, login):
     item = next(i for i in exam["items"] if i["task_id"] == task_id)
     assert len(item["images"]) == 1
     assert [a["name"] for a in item["attachments"]] == ["5.txt"]
+
+
+# ---------- Картинки в тексте (Markdown) ----------
+
+def test_image_in_explanation_hidden_until_answer(admin_client, client, new_task):
+    """Картинку, вставленную только в разбор, ученик не видит под условием — иначе подсказка."""
+    in_text = upload(admin_client, new_task["id"], "условие.png", PNG, "image").json()
+    secret = upload(admin_client, new_task["id"], "решение.png", PNG, "image").json()
+    plain = upload(admin_client, new_task["id"], "просто.png", PNG, "image").json()
+    admin_client.patch(f"/tasks/{new_task['id']}", json={
+        "statement": f"Граф:\n\n![]({in_text['url']})\n\nНайдите путь.",
+        "explanation": f"Решение на рисунке: ![]({secret['url']})",
+    })
+    student = client.get(f"/tasks/{new_task['id']}").json()
+    assert {i["id"] for i in student["images"]} == {in_text["id"], plain["id"]}  # без картинки разбора
+    assert secret["url"] not in str(student)
+    full = admin_client.get(f"/tasks/{new_task['id']}/admin").json()
+    assert {i["id"] for i in full["images"]} == {in_text["id"], secret["id"], plain["id"]}  # редактору — все
+    checked = client.post(f"/tasks/{new_task['id']}/check", json={"answer": "42"}).json()
+    assert secret["url"] in checked["explanation"]  # после ответа — в разборе
+    assert client.get(secret["url"]).status_code == 200
+
+
+def test_image_in_both_statement_and_explanation_shown(admin_client, client, new_task):
+    image = upload(admin_client, new_task["id"], "граф.png", PNG, "image").json()
+    admin_client.patch(f"/tasks/{new_task['id']}", json={
+        "statement": f"![]({image['url']})", "explanation": f"Снова ![]({image['url']})",
+    })
+    assert [i["id"] for i in client.get(f"/tasks/{new_task['id']}").json()["images"]] == [image["id"]]
+
+
+def test_exam_hides_explanation_images(admin_client, client, login):
+    task_id = client.get("/numbers/5/tasks").json()["items"][0]["id"]
+    secret = upload(admin_client, task_id, "решение.png", PNG, "image").json()
+    admin_client.patch(f"/tasks/{task_id}", json={"explanation": f"![]({secret['url']})"})
+    me = login()
+    exam = client.post("/exam/start", headers=me).json()
+    item = next(i for i in exam["items"] if i["task_id"] == task_id)
+    assert item["images"] == []

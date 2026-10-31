@@ -294,7 +294,7 @@ def to_view(session: ExamSession) -> dict:
             "statement": a.task.statement,
             "question": a.part.question if a.part else None,
             "image_url": a.task.image_url,
-            "images": a.task.images,
+            "images": a.task.student_images,
             "attachments": a.task.attachments,
             "answer": a.answer,
         }

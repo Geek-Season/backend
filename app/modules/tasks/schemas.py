@@ -82,7 +82,11 @@ class TaskRead(BaseModel):
     )
     statement: str
     image_url: str | None = Field(description="Картинка по внешней ссылке (старый способ; новые — в images)")
-    images: list[TaskFileRead] = Field(default=[], description="Загруженные картинки — показываются в условии")
+    images: list[TaskFileRead] = Field(
+        default=[],
+        validation_alias="student_images",
+        description="Загруженные картинки для ученика (без вставленных только в разбор — они видны после ответа)",
+    )
     attachments: list[TaskFileRead] = Field(default=[], description="Файлы к заданию для скачивания")
     source: Source
     source_label: str | None
@@ -110,6 +114,7 @@ class TaskAdminRead(TaskRead):
     correct_answer: str = Field(description="У задач 19–21 — сводка ответов частей, например «19: 29; 20: 28 48; 21: 44»")
     explanation: str
     created_at: datetime
+    images: list[TaskFileRead] = Field(default=[], validation_alias="images", description="Все картинки задачи")
     parts: list[PartAdminRead] = []
 
 

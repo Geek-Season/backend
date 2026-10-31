@@ -79,6 +79,22 @@ class Task(Base):
     def attachments(self) -> list["TaskFile"]:
         return [f for f in self.files if f.kind == FILE_ATTACHMENT]
 
+    @property
+    def student_images(self) -> list["TaskFile"]:
+        """Картинки, которые можно показать ученику до ответа.
+
+        Условие, вопросы и разборы — Markdown: автор вставляет картинку прямо в текст,
+        например ![](/files/3f2a….png). Картинку из РАЗБОРА нельзя показывать под
+        условием до ответа — она подсказала бы решение. Ученик увидит её в самом
+        разборе, после проверки.
+        """
+        in_explanations = " ".join([self.explanation or "", *(p.explanation or "" for p in self.parts)])
+        in_statement = " ".join([self.statement or "", *(p.question or "" for p in self.parts)])
+        return [
+            f for f in self.images
+            if f.url not in in_explanations or f.url in in_statement  # в условии тоже — значит, не секрет
+        ]
+
 
 class TaskPart(Base):
     """Вопрос внутри составной задачи: «19», «20», «21» — у каждого свой ответ и свой балл.
