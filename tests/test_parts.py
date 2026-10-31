@@ -40,8 +40,10 @@ def test_each_part_checked_separately(client):
     body = check(client, game_task(client)["id"], {"answers": {"19": "29", "20": "48 28", "21": ""}}).json()
     assert body["is_correct"] is False
     assert [p["is_correct"] for p in body["parts"]] == [True, False, False]  # порядок чисел важен; пусто — неверно
-    assert body["parts"][1]["correct_answer"] == "28 48"
+    # Верная часть — с разбором; неверные — без ответа и разбора, пока ученик не ошибётся трижды.
     assert body["parts"][0]["explanation"].startswith("Петя неудачно")
+    assert body["parts"][1]["correct_answer"] is None and body["parts"][1]["explanation"] is None
+    assert body["correct_answer"] is None and body["attempts_left"] == 2
 
 
 def test_wrong_answer_format(client):

@@ -98,6 +98,11 @@ class TaskRead(BaseModel):
         default=None,
         description="Для вошедшего ученика: solved — решена, failed — пробовал, но неверно",
     )
+    solution_available: bool = Field(
+        default=False,
+        description="Можно открыть ответ и разбор (GET /tasks/{id}/solution): задача решена "
+                    "или неверных ответов набралось достаточно",
+    )
 
 
 class TaskPage(BaseModel):
@@ -196,13 +201,37 @@ class PartResult(BaseModel):
     number: str
     answer: str
     is_correct: bool
-    correct_answer: str
-    explanation: str
+    correct_answer: str | None = Field(description="null, если часть решена неверно и разбор ещё закрыт")
+    explanation: str | None = Field(description="null, если часть решена неверно и разбор ещё закрыт")
 
 
 class AnswerResult(BaseModel):
+    """Результат проверки.
+
+    Верный ответ — с правильным ответом и разбором. Неверный — без них: ученик
+    пробует ещё. Когда неверных ответов набралось reveal_after_wrong (3),
+    solution_available = true и ответ с разбором можно открыть: GET /tasks/{id}/solution.
+    """
+
     task_id: int
     is_correct: bool = Field(description="У задачи 19–21 — верны все три части")
+    correct_answer: str | None = Field(description="null при неверном ответе")
+    explanation: str | None = Field(description="null при неверном ответе")
+    parts: list[PartResult] = []
+    solution_available: bool = Field(description="Можно открыть ответ и разбор")
+    attempts_left: int = Field(description="Сколько ещё неверных ответов — и откроется разбор (0 — уже открыт)")
+
+
+class PartSolution(BaseModel):
+    number: str
     correct_answer: str
     explanation: str
-    parts: list[PartResult] = []
+
+
+class TaskSolution(BaseModel):
+    """Ответ и разбор задачи (после решения или нескольких неверных попыток)."""
+
+    task_id: int
+    correct_answer: str
+    explanation: str
+    parts: list[PartSolution] = []

@@ -237,6 +237,35 @@ def check_answer(task: Task, answer: str | None, answers: dict[str, str] | None 
     }
 
 
+def hide_solution(result: dict) -> dict:
+    """Неверный ответ: убрать правильный ответ и разбор, чтобы ученик попробовал ещё.
+
+    У задачи 19–21 верно решённые части остаются с разбором — их ученик уже знает.
+    """
+    return {
+        **result,
+        "correct_answer": None,
+        "explanation": None,
+        "parts": [
+            p if p["is_correct"] else {**p, "correct_answer": None, "explanation": None}
+            for p in result["parts"]
+        ],
+    }
+
+
+def solution(task: Task) -> dict:
+    """Правильный ответ и разбор целиком."""
+    return {
+        "task_id": task.id,
+        "correct_answer": task.correct_answer,
+        "explanation": task.explanation,
+        "parts": [
+            {"number": p.number, "correct_answer": p.correct_answer, "explanation": p.explanation}
+            for p in task.parts
+        ],
+    }
+
+
 def answer_text(result: dict, answer: str | None) -> str:
     """Что сохранить в статистику как ответ ученика."""
     if not result["parts"]:
