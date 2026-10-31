@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.pts.schemas import RankRead
+
 
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -18,6 +20,7 @@ class UserRead(BaseModel):
     username: str | None
     role: Literal["student", "admin"]
     created_at: datetime
+    rank: RankRead | None = Field(default=None, validation_alias="rank_info", description="Ранг (null — до входного пробника)")
 
 
 class ProfileUpdate(BaseModel):

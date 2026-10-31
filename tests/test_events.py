@@ -130,7 +130,7 @@ def test_achievements_api(client, login, db):
     client.post(f"/tasks/{TASK_17}/check", json={"answer": "2 20"}, headers=me)
     achievements.check_and_grant(db, user_id(client, me))
     items = client.get("/me/achievements", headers=me).json()
-    assert len(items) == 8
+    assert len(items) == 14  # 8 обычных + 6 за ранги
     assert [i["code"] for i in items if i["received_at"]] == ["first_solve"]
     assert client.get("/me/achievements").status_code == 401
 

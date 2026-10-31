@@ -23,10 +23,11 @@ from datetime import UTC, datetime, timedelta
 
 from redis import Redis
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from app.core import events
 from app.core.config import settings
+from app.modules.auth.models import User
 from app.modules.exam.models import ExamAnswer, ExamSession
 from app.modules.exam.scale import FULL_PRIMARY_MAX, MIN_PASSING, MIN_UNIVERSITY, to_test_score
 from app.modules.progress import service as progress
@@ -224,6 +225,12 @@ def finish(db: Session, r: Redis, session: ExamSession) -> ExamSession:
     session.finished_at = min(now, session.deadline_at)  # опоздание не «продлевает» экзамен
     db.commit()
 
+    # PTS: каждая задача, которую ученик встречает впервые, — матч (пустой ответ = ошибка).
+    # Первый завершённый пробник — входной: после него появляется ранг.
+    from app.modules.pts import service as pts  # здесь: модуль PTS сам импортирует модели пробника
+
+    session.pts_outcome = pts.finish_exam(db, db.get(User, session.user_id), session)
+
     r.delete(_active_key(session.user_id))
     rating.add_point(r, session.user_id, new_points)
     # Событие для воркера: уведомление в Telegram и достижения. Публикуется и при
@@ -322,4 +329,22 @@ def to_view(session: ExamSession) -> dict:
         **test_score_fields(session),
         "answered": sum(1 for a in session.answers if a.answer),
         "items": items,
+        **_pts_fields(session),
+    }
+
+
+def _pts_fields(session: ExamSession) -> dict:
+    """PTS за пробник; ранг и «входной» — только в ответе на завершение (там это новость)."""
+    if session.finished_at is None:
+        return {"pts_delta": None, "rank_up": None, "calibrated_now": False}
+    from app.modules.pts import service as pts
+    from app.modules.pts.schemas import rank_read
+
+    outcome = getattr(session, "pts_outcome", None)
+    db = object_session(session)
+    delta = pts.exam_delta(db, session.id) if db is not None else None
+    return {
+        "pts_delta": round(delta, 1) if delta is not None else None,
+        "rank_up": rank_read(outcome.rank_up) if outcome else None,
+        "calibrated_now": bool(outcome and outcome.calibrated_now),
     }

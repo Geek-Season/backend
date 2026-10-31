@@ -18,6 +18,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from redis import Redis
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import events
@@ -26,6 +27,9 @@ from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user, require_admin
 from app.modules.auth.models import ROLE_ADMIN, User
 from app.modules.progress import service as progress
+from app.modules.progress.models import Attempt
+from app.modules.pts import service as pts
+from app.modules.pts.schemas import rank_read
 from app.modules.rating import service as rating
 from app.modules.tasks import files, reveal, service
 from app.modules.tasks.models import FILE_IMAGE, Task
@@ -189,19 +193,31 @@ def check_task(
         )
         if first_solve:
             rating.add_point(r, user.id)
-        # Событие для фонового воркера (достижения). Брокер недоступен — ответ всё равно уходит.
+        solved, wrong = reveal.user_state(db, user.id, task.id)
+        attempt = db.scalar(
+            select(Attempt).where(Attempt.user_id == user.id, Attempt.task_id == task.id).order_by(Attempt.id.desc())
+        )
+        outcome = pts.record_answer(db, user, task, attempt)
+        pts_info = {
+            "pts_delta": round(outcome.delta, 1) if outcome.counted else None,
+            "pts_repeat": not outcome.counted,
+            "rank_up": rank_read(outcome.rank_up),
+        }
+        # Событие для фонового воркера (достижения, в том числе за ранг — поэтому после PTS).
+        # Брокер недоступен — ответ всё равно уходит.
         events.publish("task.answered", {
             "user_id": user.id, "task_id": task.id,
             "is_correct": result["is_correct"], "first_solve": first_solve,
         })
-        solved, wrong = reveal.user_state(db, user.id, task.id)
     else:
         solved, wrong = reveal.guest_record(r, _client(request), task.id, result["is_correct"])
+        pts_info = {}
 
     if not result["is_correct"]:
         result = service.hide_solution(result)
     return {
         **result,
+        **pts_info,
         "solution_available": reveal.is_open(solved, wrong),
         "attempts_left": reveal.attempts_left(solved, wrong),
     }

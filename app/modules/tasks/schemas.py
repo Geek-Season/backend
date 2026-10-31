@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.pts.schemas import RankRead
+
 # demo — демоверсия, official — реальный экзамен, approbation — апробация, author — авторская.
 Source = Literal["demo", "official", "approbation", "author"]
 Sort = Literal["new", "old", "easy", "hard"]
@@ -221,6 +223,12 @@ class AnswerResult(BaseModel):
     parts: list[PartResult] = []
     solution_available: bool = Field(description="Можно открыть ответ и разбор")
     attempts_left: int = Field(description="Сколько ещё неверных ответов — и откроется разбор (0 — уже открыт)")
+    pts_delta: float | None = Field(
+        default=None,
+        description="Изменение PTS за этот ответ; null — не засчитан (гость или повторная попытка)",
+    )
+    pts_repeat: bool = Field(default=False, description="Повторная попытка вошедшего: PTS не меняются")
+    rank_up: RankRead | None = Field(default=None, description="Новый ранг выше прежнего — показать поздравление")
 
 
 class PartSolution(BaseModel):

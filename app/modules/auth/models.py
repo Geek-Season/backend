@@ -39,6 +39,9 @@ class User(Base):
     pts_rd: Mapped[float] = mapped_column(Float, default=200.0, server_default=text("200"))
     pts_vol: Mapped[float] = mapped_column(Float, default=0.06, server_default=text("0.06"))
     pts_games: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    # Ранг (app/modules/pts/ranks.py): ключ вроде «hero»; None — ещё не было входного пробника.
+    rank_key: Mapped[str | None] = mapped_column(String(20))
+    calibrated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # student — ученик; admin — может управлять банком задач.
     role: Mapped[str] = mapped_column(String(20), default="student", server_default=text("'student'"))
 
@@ -51,6 +54,14 @@ class User(Base):
     def display_name(self) -> str:
         """Как ученика зовут на сайте: ник, а если его нет — имя из Telegram."""
         return self.nickname or self.first_name
+
+    @property
+    def rank_info(self) -> dict | None:
+        """Ранг для API: {key, title, short} или None (до входного пробника)."""
+        from app.modules.pts.ranks import by_key  # здесь, чтобы модели не зависели от модуля PTS при импорте
+
+        rank = by_key(self.rank_key)
+        return {"key": rank.key, "title": rank.title, "short": rank.short} if rank else None
 
     @property
     def avatar_url(self) -> str | None:

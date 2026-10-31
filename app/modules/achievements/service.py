@@ -16,10 +16,12 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.modules.achievements.catalog import ACHIEVEMENTS
 from app.modules.achievements.models import Achievement, UserAchievement
+from app.modules.auth.models import User
 from app.modules.exam.models import ExamSession
 from app.modules.exam.scale import to_test_score
 from app.modules.progress import service as progress
 from app.modules.progress.models import Attempt
+from app.modules.pts.ranks import RANKS, by_key
 from app.modules.tasks.models import Task
 
 NUMBER_CLOSED_MIN_TASKS = 3
@@ -61,7 +63,11 @@ def _metrics(db: Session, user_id: int) -> dict:
         for number_id, total in totals.items()
     )
 
+    user = db.get(User, user_id)
+    rank = by_key(user.rank_key) if user else None
     return {
+        # Высота ранга: 0 — Рекрут (или ранга нет), 6 — Immortal.
+        "rank_level": len(RANKS) - 1 - RANKS.index(rank) if rank else 0,
         "solved": solved,
         "streak": progress._streak(days, today),
         "exams": exams[0],
@@ -80,6 +86,7 @@ def _earned(m: dict) -> set[str]:
         "first_exam": m["exams"] >= 1,
         "exam_70": m["best_test"] >= 70,
         "number_closed": m["number_closed"],
+        **{f"rank_{r.key}": m["rank_level"] >= len(RANKS) - 1 - i for i, r in enumerate(RANKS) if r.key != "recruit"},
     }
     return {code for code, ok in rules.items() if ok}
 
