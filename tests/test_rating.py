@@ -97,3 +97,21 @@ def test_weak_sorted_worst_first(client, login):
     solve(client, me, TASK_16, "2")    # 16: точность 0.33
     solve(client, me, TASK_17, "0 0")  # 17: точность 0
     assert list(weak(client, me)) == ["17", "16"]
+
+
+def test_rating_hides_telegram_contacts(client, login, db):
+    """По рейтингу нельзя найти ученика в Telegram: ни @username, ни Telegram ID, ни фамилии."""
+    from app.modules.auth.models import User
+
+    vasya = login(111, "Вася")
+    user = db.scalar(select(User).where(User.telegram_id == 111))
+    user.username, user.last_name = "vasya_secret", "Пупкин"
+    db.commit()
+    solve(client, vasya, TASK_17, "2 20")
+
+    for headers in (None, vasya):  # гостю и самому ученику
+        response = client.get("/rating?period=all", headers=headers)
+        assert response.json()["top"][0]["first_name"] == "Вася"
+        for secret in ("vasya_secret", "Пупкин", "111", "username", "telegram"):
+            assert secret not in response.text
+    assert client.get("/auth/me", headers=vasya).json()["username"] == "vasya_secret"  # себе — видно

@@ -15,10 +15,12 @@ router = APIRouter(prefix="/rating", tags=["Рейтинг"])
 
 
 class RatingRow(BaseModel):
+    """Строка рейтинга. Рейтинг открыт всем, поэтому здесь нет ничего, по чему
+    ученика можно найти в Telegram: ни @username, ни Telegram ID, ни фамилии."""
+
     place: int
-    user_id: int
+    user_id: int  # внутренний номер на сайте, не Telegram ID
     first_name: str
-    username: str | None
     points: int
     is_me: bool
 
