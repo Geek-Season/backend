@@ -35,14 +35,30 @@ def _token_response(db: Session, user_id: int) -> dict:
     return {"access_token": create_access_token(user.id), "user": user}
 
 
+def _client(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many() -> HTTPException:
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "Слишком много попыток. Подождите минуту",
+        headers={"Retry-After": "60"},
+    )
+
+
 @router.post("/telegram/start", response_model=LoginStart)
-def telegram_start(r: Redis = Depends(get_redis)):
+def telegram_start(request: Request, r: Redis = Depends(get_redis)):
+    """Новый QR-ключ. Не больше QR_STARTS_PER_MINUTE (10) в минуту с одного адреса — иначе 429."""
     if not settings.bot_username:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Вход через Telegram не настроен: укажите BOT_USERNAME в .env",
         )
-    token = service.start_qr_login(r)
+    try:
+        token = service.start_qr_login(r, _client(request))
+    except service.TooManyAttempts:
+        raise _too_many() from None
     return {
         "token": token,
         "bot_link": f"https://t.me/{settings.bot_username}?start={token}",
@@ -66,13 +82,10 @@ def code_login(
     r: Redis = Depends(get_redis),
     db: Session = Depends(get_db),
 ):
-    client = request.client.host if request.client else "unknown"
     try:
-        user_id = service.redeem_code(r, data.code, client)
+        user_id = service.redeem_code(r, data.code, _client(request))
     except service.TooManyAttempts:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток. Подождите минуту"
-        ) from None
+        raise _too_many() from None
     if user_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неверный или устаревший код")
     return _token_response(db, user_id)
