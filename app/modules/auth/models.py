@@ -24,6 +24,8 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
     username: Mapped[str | None] = mapped_column(String(64))
+    # Ник на сайте (задаёт сам ученик в профиле). None — показываем имя из Telegram.
+    nickname: Mapped[str | None] = mapped_column(String(20))
     # student — ученик; admin — может управлять банком задач.
     role: Mapped[str] = mapped_column(String(20), default="student", server_default=text("'student'"))
 
@@ -31,6 +33,11 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def display_name(self) -> str:
+        """Как ученика зовут на сайте: ник, а если его нет — имя из Telegram."""
+        return self.nickname or self.first_name
 
     @property
     def is_admin(self) -> bool:

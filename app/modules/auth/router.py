@@ -4,6 +4,8 @@ POST /auth/telegram/start           — получить ключ и ссылк�
 GET  /auth/telegram/status/{ключ}   — сайт спрашивает, подтвердили ли вход
 POST /auth/code                     — войти по коду из бота
 GET  /auth/me                       — кто я (нужен токен)
+PATCH /auth/me                      — сменить ник {"nickname": "..."} (null — убрать)
+DELETE /auth/users/{id}/nickname    — сбросить чужой ник (только админ)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -13,13 +15,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import get_redis
-from app.modules.auth import service
-from app.modules.auth.deps import get_current_user
+from app.modules.auth import nickname, service
+from app.modules.auth.deps import get_current_user, require_admin
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
     CodeLogin,
     LoginStart,
     LoginStatus,
+    NicknameUpdate,
     TokenResponse,
     UserRead,
 )
@@ -94,3 +97,24 @@ def code_login(
 @router.get("/me", response_model=UserRead)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.patch("/me", response_model=UserRead)
+def update_me(body: NicknameUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Сменить ник: 3–20 символов, буквы, цифры, «_» и «-», без мата. null — убрать ник."""
+    try:
+        user.nickname = nickname.clean(body.nickname)
+    except nickname.NicknameError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from None
+    db.commit()
+    return user
+
+
+@router.delete("/users/{user_id}/nickname", status_code=status.HTTP_204_NO_CONTENT)
+def reset_nickname(user_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    """Сбросить неприличный ник: ученик снова будет показан под именем из Telegram."""
+    target = service.get_user(db, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    target.nickname = None
+    db.commit()
