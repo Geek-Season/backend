@@ -3,8 +3,8 @@
 Ник показывается на сайте вместо имени из Telegram: в шапке, профиле, рейтинге.
 Не задан — показывается имя из Telegram. Ники могут повторяться.
 
-Правила: 3–20 символов; буквы (любого алфавита), цифры, «_» и «-»; хотя бы одна
-буква или цифра; без мата. Фильтр простой — он отсекает очевидное, в том числе
+Правила: 3–20 символов; буквы (любого алфавита), цифры, пробел, «_» и «-»; хотя бы
+одна буква или цифра; без мата. Пробелы по краям убираются, подряд — сливаются в один. Фильтр простой — он отсекает очевидное, в том числе
 с заменой букв (xyй, п1зд…) и транслитом (pizda, huy). Что проскочит — администратор сбросит кнопкой
 в рейтинге (DELETE /auth/users/{id}/nickname).
 """
@@ -14,7 +14,7 @@ import re
 MIN_LENGTH = 3
 MAX_LENGTH = 20
 
-_ALLOWED = re.compile(r"[\w-]+")
+_ALLOWED = re.compile(r"[\w-]+(?: [\w-]+)*")
 
 # Корни, которые встречаются почти только в мате. Сравниваем после нормализации
 # (латиница и цифры, похожие на русские буквы, → русские; ё → е; без «_» и «-»).
@@ -58,7 +58,7 @@ class NicknameError(ValueError):
 
 
 def _has_bad_word(nickname: str) -> bool:
-    flat = nickname.lower().replace("_", "").replace("-", "")
+    flat = nickname.lower().replace("_", "").replace("-", "").replace(" ", "")
     if any(word in flat for word in _BAD_LATIN):
         return True
     for cyrillic in (flat.translate(_LOOKALIKE), _translit(flat)):
@@ -74,15 +74,15 @@ def clean(value: str | None) -> str | None:
     """
     if value is None:
         return None
-    nickname = value.strip()
+    nickname = " ".join(value.split())
     if not nickname:
         return None
     if not MIN_LENGTH <= len(nickname) <= MAX_LENGTH:
-        raise NicknameError(f"Ник — от {MIN_LENGTH} до {MAX_LENGTH} символов")
+        raise NicknameError(f"Имя — от {MIN_LENGTH} до {MAX_LENGTH} символов")
     if not _ALLOWED.fullmatch(nickname):
-        raise NicknameError("В нике можно использовать только буквы, цифры, «_» и «-»")
+        raise NicknameError("В имени можно использовать только буквы, цифры, пробел, «_» и «-»")
     if not any(ch.isalnum() for ch in nickname):
-        raise NicknameError("В нике должна быть хотя бы одна буква или цифра")
+        raise NicknameError("В имени должна быть хотя бы одна буква или цифра")
     if _has_bad_word(nickname):
-        raise NicknameError("Такой ник выбрать нельзя")
+        raise NicknameError("Такое имя выбрать нельзя")
     return nickname

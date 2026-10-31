@@ -10,6 +10,9 @@ class UserRead(BaseModel):
     id: int
     display_name: str = Field(description="Как ученика зовут на сайте: ник или имя из Telegram")
     nickname: str | None = Field(description="Ник, если ученик его задал")
+    avatar_url: str | None = Field(description="Аватарка, например /avatars/3f2a….jpg; null — показать букву")
+    has_custom_avatar: bool = Field(validation_alias="avatar_custom", description="Загружена своя (не из Telegram)")
+    gender: Literal["m", "f"] | None = Field(description="Пол: m, f; null — не указан")
     first_name: str
     last_name: str | None
     username: str | None
@@ -17,12 +20,17 @@ class UserRead(BaseModel):
     created_at: datetime
 
 
-class NicknameUpdate(BaseModel):
-    """Сменить ник. null или пустая строка — убрать ник и снова показывать имя из Telegram."""
+class ProfileUpdate(BaseModel):
+    """Настройки профиля. Меняются только присланные поля.
+
+    nickname: null или пустая строка — убрать и снова показывать имя из Telegram.
+    gender: m, f или null (не указан).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    nickname: str | None = Field(examples=["kotik_42"], max_length=100)
+    nickname: str | None = Field(default=None, examples=["Котик 42"], max_length=100)
+    gender: Literal["m", "f"] | None = None
 
 
 class LoginStart(BaseModel):

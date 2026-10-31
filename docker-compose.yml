@@ -85,7 +85,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - uploads:/app/uploads             # картинки и файлы к задачам переживают пересборку
+      - uploads:/app/uploads             # картинки и файлы к задачам, аватарки — переживают пересборку
     depends_on:
       db:
         condition: service_healthy   # ждём, пока база реально готова
