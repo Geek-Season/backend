@@ -7,6 +7,7 @@
 Страница прототипов номера:           GET  /numbers/{code}/tasks
 Одна задача:                          GET  /tasks/{id}
 Проверка ответа:                      POST /tasks/{id}/check
+Ответ и разбор (после 3 ошибок):      GET  /tasks/{id}/solution
 Управление банком (только админ):     POST/PATCH/DELETE /tasks, GET /tasks/{id}/admin
 Картинки и файлы к задаче (админ):    POST /tasks/{id}/files, DELETE /tasks/{id}/files/{file_id}
 Скачать картинку или файл:            GET  /files/{имя}
@@ -14,7 +15,7 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from redis import Redis
 from sqlalchemy.orm import Session
@@ -23,10 +24,10 @@ from app.core import events
 from app.core.db import get_db
 from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user, require_admin
-from app.modules.auth.models import User
+from app.modules.auth.models import ROLE_ADMIN, User
 from app.modules.progress import service as progress
 from app.modules.rating import service as rating
-from app.modules.tasks import files, service
+from app.modules.tasks import files, reveal, service
 from app.modules.tasks.models import FILE_IMAGE, Task
 from app.modules.tasks.schemas import (
     AnswerResult,
@@ -40,12 +41,27 @@ from app.modules.tasks.schemas import (
     TaskFileRead,
     TaskPage,
     TaskRead,
+    TaskSolution,
     TaskUpdate,
 )
 
 numbers_router = APIRouter(prefix="/numbers", tags=["Номера ЕГЭ"])
 tasks_router = APIRouter(prefix="/tasks", tags=["Задачи"])
 files_router = APIRouter(prefix="/files", tags=["Файлы задач"])
+
+
+def _client(request: Request) -> str:
+    """Адрес ученика (за прокси хостинга — из X-Forwarded-For, см. Dockerfile)."""
+    return request.client.host if request.client else "unknown"
+
+
+def _with_solution_flags(
+    items: list[TaskRead], db: Session, user: User | None, r: Redis, request: Request
+) -> list[TaskRead]:
+    """Отметить задачи, у которых ученику уже можно открыть ответ и разбор."""
+    ids = [t.id for t in items]
+    opened = reveal.user_open(db, user.id, ids) if user is not None else reveal.guest_open(r, _client(request), ids)
+    return [t.model_copy(update={"solution_available": True}) if t.id in opened else t for t in items]
 
 
 def _task_or_404(task_id: int, db: Session) -> Task:
@@ -89,8 +105,10 @@ def get_number_tasks(
     ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    request: Request = None,
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
+    r: Redis = Depends(get_redis),
 ):
     """Прототипы номера. Ответы и разборы не отдаются."""
     number = service.get_number(db, code)
@@ -116,6 +134,7 @@ def get_number_tasks(
         statuses = progress.task_statuses(db, user.id, [t.id for t in items])
         items = [t.model_copy(update={"status": statuses.get(t.id)}) for t in items]
         solved = progress.solved_by_number(db, user.id).get(number.id, 0)
+    items = _with_solution_flags(items, db, user, r, request)
 
     return {
         "number": {
@@ -132,14 +151,22 @@ def get_number_tasks(
 # ---------- Задачи ----------
 
 @tasks_router.get("/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    return _task_or_404(task_id, db)
+def get_task(
+    task_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+    r: Redis = Depends(get_redis),
+):
+    task = TaskRead.model_validate(_task_or_404(task_id, db))
+    return _with_solution_flags([task], db, user, r, request)[0]
 
 
 @tasks_router.post("/{task_id}/check", response_model=AnswerResult)
 def check_task(
     task_id: int,
     submission: AnswerSubmission,
+    request: Request,
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
     r: Redis = Depends(get_redis),
@@ -147,6 +174,8 @@ def check_task(
     """Проверить ответ. Код 200 значит «запрос обработан»; верность — в поле is_correct.
 
     Если ученик вошёл, ответ сохраняется в его статистику.
+    При неверном ответе правильный ответ и разбор не отдаются, пока неверных ответов
+    не наберётся reveal_after_wrong (3); тогда solution_available = true.
     """
     task = _task_or_404(task_id, db)
     try:
@@ -165,7 +194,46 @@ def check_task(
             "user_id": user.id, "task_id": task.id,
             "is_correct": result["is_correct"], "first_solve": first_solve,
         })
-    return result
+        solved, wrong = reveal.user_state(db, user.id, task.id)
+    else:
+        solved, wrong = reveal.guest_record(r, _client(request), task.id, result["is_correct"])
+
+    if not result["is_correct"]:
+        result = service.hide_solution(result)
+    return {
+        **result,
+        "solution_available": reveal.is_open(solved, wrong),
+        "attempts_left": reveal.attempts_left(solved, wrong),
+    }
+
+
+@tasks_router.get("/{task_id}/solution", response_model=TaskSolution)
+def get_solution(
+    task_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+    r: Redis = Depends(get_redis),
+):
+    """Правильный ответ и разбор — когда задача решена или неверных ответов набралось
+    reveal_after_wrong (3). Иначе 403 с числом оставшихся попыток.
+
+    Посмотреть ответ — не нарушение: решить задачу после этого можно как обычно.
+    """
+    task = _task_or_404(task_id, db)
+    if user is not None and user.role == ROLE_ADMIN:
+        return service.solution(task)
+    if user is not None:
+        solved, wrong = reveal.user_state(db, user.id, task.id)
+    else:
+        solved, wrong = reveal.guest_state(r, _client(request), task.id)
+    if not reveal.is_open(solved, wrong):
+        left = reveal.attempts_left(solved, wrong)
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"Разбор откроется после ещё {left} неверн{'ого ответа' if left == 1 else 'ых ответов'}",
+        )
+    return service.solution(task)
 
 
 @tasks_router.get("/{task_id}/admin", response_model=TaskAdminRead)

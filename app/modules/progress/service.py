@@ -139,6 +139,22 @@ def task_statuses(db: Session, user_id: int, task_ids: list[int]) -> dict[int, s
     return {task_id: ("solved" if ok else "failed") for task_id, ok in rows}
 
 
+def task_progress(db: Session, user_id: int, task_ids: list[int]) -> dict[int, tuple[bool, int]]:
+    """{task_id: (решена ли, сколько неверных ответов)} для задач, которые ученик пробовал."""
+    if not task_ids:
+        return {}
+    rows = db.execute(
+        select(
+            Attempt.task_id,
+            func.bool_or(Attempt.is_correct),
+            func.sum(case((Attempt.is_correct, 0), else_=1)),
+        )
+        .where(Attempt.user_id == user_id, Attempt.task_id.in_(task_ids))
+        .group_by(Attempt.task_id)
+    ).all()
+    return {task_id: (bool(ok), int(wrong or 0)) for task_id, ok, wrong in rows}
+
+
 def _streak(active_days: set[date], today: date) -> int:
     """Сколько дней подряд ученик решал хоть что-то.
 
