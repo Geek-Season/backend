@@ -21,7 +21,7 @@ def test_points_for_first_solve_only(client, login):
 
     for period in ("week", "all"):
         rating = client.get(f"/rating?period={period}", headers=petya).json()
-        assert [(r["first_name"], r["points"], r["place"]) for r in rating["top"]] == [("Вася", 2, 1), ("Петя", 1, 2)]
+        assert [(r["name"], r["points"], r["place"]) for r in rating["top"]] == [("Вася", 2, 1), ("Петя", 1, 2)]
         assert rating["me"] == {"place": 2, "points": 1}
         assert [r["is_me"] for r in rating["top"]] == [False, True]
         assert rating["participants"] == 2
@@ -111,7 +111,7 @@ def test_rating_hides_telegram_contacts(client, login, db):
 
     for headers in (None, vasya):  # гостю и самому ученику
         response = client.get("/rating?period=all", headers=headers)
-        assert response.json()["top"][0]["first_name"] == "Вася"
+        assert response.json()["top"][0]["name"] == "Вася"
         for secret in ("vasya_secret", "Пупкин", "111", "username", "telegram"):
             assert secret not in response.text
     assert client.get("/auth/me", headers=vasya).json()["username"] == "vasya_secret"  # себе — видно

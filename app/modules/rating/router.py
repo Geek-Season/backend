@@ -20,7 +20,8 @@ class RatingRow(BaseModel):
 
     place: int
     user_id: int  # внутренний номер на сайте, не Telegram ID
-    first_name: str
+    name: str  # ник, а если его нет — имя из Telegram
+    has_nickname: bool
     points: int
     is_me: bool
 

@@ -8,11 +8,21 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    display_name: str = Field(description="Как ученика зовут на сайте: ник или имя из Telegram")
+    nickname: str | None = Field(description="Ник, если ученик его задал")
     first_name: str
     last_name: str | None
     username: str | None
     role: Literal["student", "admin"]
     created_at: datetime
+
+
+class NicknameUpdate(BaseModel):
+    """Сменить ник. null или пустая строка — убрать ник и снова показывать имя из Telegram."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: str | None = Field(examples=["kotik_42"], max_length=100)
 
 
 class LoginStart(BaseModel):
