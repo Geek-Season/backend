@@ -24,6 +24,8 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine   # с веб-панелью
+    volumes:
+      - ./docker/rabbitmq/enabled_plugins.dev:/etc/rabbitmq/enabled_plugins:ro   # плагин веб-панели
     ports:
       - "5672:5672"          # для API и воркера, запущенных на компьютере
       - "15672:15672"        # веб-панель: http://localhost:15672 (geek / geek)

@@ -96,6 +96,11 @@ class _Publisher:
         params.socket_timeout = 2
         params.blocked_connection_timeout = 2
         params.connection_attempts = 1
+        # Без heartbeat: BlockingConnection отвечает на них, только когда что-то отправляет,
+        # и между событиями RabbitMQ закрывал соединение («missed heartbeats from client»),
+        # а первая отправка после простоя тратилась на переподключение. Обрыв сети
+        # всё равно обнаружится при отправке — и сработает второе подключение ниже.
+        params.heartbeat = 0
         self._connection = pika.BlockingConnection(params)
         self._channel = self._connection.channel()
         declare_topology(self._channel)
