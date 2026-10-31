@@ -98,8 +98,9 @@ def leaderboard(r: Redis, db: Session, period: str, limit: int, user_id: int | N
         rows.append({
             "place": place_for(score),
             "user_id": user.id,
+            # Только имя: @username из Telegram сюда не попадает — по нему любой
+            # посетитель рейтинга мог бы найти ученика в Telegram и написать ему.
             "first_name": user.first_name,
-            "username": user.username,
             "points": int(score),
             "is_me": user.id == user_id,
         })
