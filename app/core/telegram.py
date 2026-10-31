@@ -64,3 +64,24 @@ def send_message(chat_id: int, text: str, reply_markup: dict | None = None) -> N
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
     call("sendMessage", payload)
+
+
+def download(file_path: str, limit: int, timeout: float = 15) -> bytes:
+    """Скачать файл, который Telegram отдал в getFile (например, фото профиля).
+
+    Адрес содержит токен бота, поэтому файл скачивает сервер, а ученику отдаёт свою копию.
+    Больше limit байт — TelegramPermanentError.
+    """
+    if not settings.bot_token:
+        raise TelegramPermanentError("BOT_TOKEN не задан")
+    url = f"{settings.telegram_api_url}/file/bot{settings.bot_token}/{file_path}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            content = response.read(limit + 1)
+    except urllib.error.HTTPError as error:
+        raise TelegramTemporaryError(f"{error.code} при скачивании файла") from error
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise TelegramTemporaryError(str(error) or type(error).__name__) from error
+    if len(content) > limit:
+        raise TelegramPermanentError("Файл слишком большой")
+    return content

@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, String, func, text
+from sqlalchemy import BigInteger, Boolean, DateTime, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -26,6 +26,14 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(64))
     # Ник на сайте (задаёт сам ученик в профиле). None — показываем имя из Telegram.
     nickname: Mapped[str | None] = mapped_column(String(20))
+    # Аватарка: имя файла в uploads/avatars. По умолчанию — фото из Telegram (обновляется
+    # при входе); avatar_custom — ученик загрузил свою, её фото из Telegram не трогает.
+    avatar_file: Mapped[str | None] = mapped_column(String(64))
+    avatar_custom: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # Какое фото из Telegram сейчас стоит (file_unique_id) — чтобы не скачивать его заново.
+    telegram_photo_uid: Mapped[str | None] = mapped_column(String(64))
+    # Пол: m, f или None (не указан). Нигде не показывается — на будущее (обращения на сайте).
+    gender: Mapped[str | None] = mapped_column(String(1))
     # student — ученик; admin — может управлять банком задач.
     role: Mapped[str] = mapped_column(String(20), default="student", server_default=text("'student'"))
 
@@ -38,6 +46,11 @@ class User(Base):
     def display_name(self) -> str:
         """Как ученика зовут на сайте: ник, а если его нет — имя из Telegram."""
         return self.nickname or self.first_name
+
+    @property
+    def avatar_url(self) -> str | None:
+        """Адрес аватарки в API (сайт добавляет к нему адрес сервера). None — показать букву."""
+        return f"/avatars/{self.avatar_file}" if self.avatar_file else None
 
     @property
     def is_admin(self) -> bool:

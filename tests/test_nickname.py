@@ -39,7 +39,7 @@ def test_same_nickname_allowed(client, login):
     assert set_nick(client, login(222, "Петя"), "Саша").status_code == 200
 
 
-@pytest.mark.parametrize("value", ["ab", "a" * 21, "кот ик", "кот!", "😀😀😀", "___", "-_-"])
+@pytest.mark.parametrize("value", ["ab", "a" * 21, "кот!", "😀😀😀", "___", "-_-", "кот _ !"])
 def test_bad_form(client, login, value):
     response = set_nick(client, login(), value)
     assert response.status_code == 422

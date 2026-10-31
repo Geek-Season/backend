@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 
 from app.modules.achievements.router import router as achievements_router
+from app.modules.auth.router import avatars_router
 from app.modules.auth.router import router as auth_router
 from app.modules.exam.router import router as exam_router
 from app.modules.notifications.router import router as notifications_router
@@ -31,6 +32,7 @@ if settings.cors_origin_list:
 
 # Подключаем модули к одному приложению.
 app.include_router(auth_router)
+app.include_router(avatars_router)
 app.include_router(numbers_router)
 app.include_router(tasks_router)
 app.include_router(files_router)

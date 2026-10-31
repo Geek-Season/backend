@@ -102,6 +102,8 @@ def leaderboard(r: Redis, db: Session, period: str, limit: int, user_id: int | N
             # по нему любой посетитель рейтинга мог бы найти ученика в Telegram.
             "name": user.display_name,
             "has_nickname": user.nickname is not None,  # админу — кнопка «сбросить ник»
+            "avatar_url": user.avatar_url,
+            "has_custom_avatar": user.avatar_custom,  # админу — «сбросить аватарку»
             "points": int(score),
             "is_me": user.id == user_id,
         })
