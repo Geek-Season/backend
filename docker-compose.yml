@@ -56,12 +56,20 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: geek
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-geek}
+      # Проекту на Netrun дано 0,5 ядра, а Erlang запускает по планировщику на каждое ядро
+      # сервера и держит их в активном ожидании — они отбирают друг у друга процессор.
+      # Один планировщик без активного ожидания — меньше пустой работы при старте.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 1:1 +sbwt none +sbwtdcpu none +sbwtdio none"
     volumes:
       - rabbitdata:/var/lib/rabbitmq   # очереди переживают перезапуск
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-geek.conf:ro    # порог памяти, тихий лог
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro      # без плагинов: −10 МБ
     healthcheck:
-      # Каждая проверка запускает отдельную Erlang-машину — на слабом сервере это несколько секунд.
+      # Готов = принимает подключения на 5672. Проверка портом (nc) почти ничего не стоит;
+      # rabbitmq-diagnostics запускает отдельную Erlang-машину и сам замедлял старт —
+      # он остаётся только запасным вариантом, если в образе нет nc.
       # start_period: первую минуту неудачные проверки не считаются — RabbitMQ ещё загружается.
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5672 || rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 10s
       timeout: 30s
       retries: 10
