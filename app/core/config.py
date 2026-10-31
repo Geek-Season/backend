@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     login_ttl_seconds: int = 300
     # Сколько попыток ввести код можно сделать за минуту с одного адреса.
     code_attempts_per_minute: int = 5
+    # Сколько QR-ключей для входа можно получить за минуту с одного адреса.
+    # Сайт переиспользует неистёкший ключ, поэтому обычному ученику хватает 1–2.
+    qr_starts_per_minute: int = 10
 
 
 settings = Settings()

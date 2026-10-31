@@ -118,6 +118,35 @@ def test_code_bruteforce_limit(client, fake_redis, db):
     assert client.post("/auth/code", json={"code": code}).status_code == 429
 
 
+def test_qr_start_limit(client, fake_redis):
+    """Не больше QR_STARTS_PER_MINUTE ключей в минуту с одного адреса — защита от спама ключами."""
+    for _ in range(settings.qr_starts_per_minute):
+        assert client.post("/auth/telegram/start").status_code == 200
+    response = client.post("/auth/telegram/start")
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Слишком много попыток. Подождите минуту"
+    assert response.headers["retry-after"] == "60"
+    # Другой адрес (другой ученик) не заблокирован.
+    assert service.start_qr_login(fake_redis, "1.2.3.4")
+
+
+def test_qr_start_limit_resets_after_minute(fake_redis):
+    for _ in range(settings.qr_starts_per_minute):
+        service.start_qr_login(fake_redis, "5.6.7.8")
+    with pytest.raises(service.TooManyAttempts):
+        service.start_qr_login(fake_redis, "5.6.7.8")
+    assert 0 < fake_redis.ttl("login:qr_starts:5.6.7.8") <= 60  # счётчик сам исчезнет через минуту
+    fake_redis.delete("login:qr_starts:5.6.7.8")  # «прошла минута»
+    assert service.start_qr_login(fake_redis, "5.6.7.8")
+
+
+def test_rate_counter_without_ttl_gets_one(fake_redis):
+    """Если срок счётчика не выставился (сбой между командами), адрес не блокируется навсегда."""
+    fake_redis.set("login:qr_starts:9.9.9.9", 3)  # счётчик без срока
+    service.start_qr_login(fake_redis, "9.9.9.9")
+    assert 0 < fake_redis.ttl("login:qr_starts:9.9.9.9") <= 60
+
+
 # ---------- Токен и пользователи ----------
 
 def test_me_requires_valid_token(client):

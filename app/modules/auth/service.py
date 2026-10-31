@@ -7,6 +7,7 @@
     login:code:{код}       user_id — код из бота
     login:user_code:{id}   последний выданный пользователю код (чтобы старый сгорел)
     login:attempts:{адрес} сколько раз за минуту вводили код
+    login:qr_starts:{адрес} сколько QR-ключей за минуту получили
 
 ВХОД ПО QR
   1. Сайт: start_qr_login() → ключ. Ключ зашит в QR-ссылку на бота.
@@ -36,7 +37,19 @@ CONFIRMED_PREFIX = "confirmed:"
 
 
 class TooManyAttempts(Exception):
-    """Слишком много попыток ввести код — похоже на перебор."""
+    """Слишком много попыток с одного адреса за минуту (перебор кода или спам ключами)."""
+
+
+def _count_per_minute(r: Redis, key: str, limit: int) -> None:
+    """Посчитать ещё одну попытку за минуту; больше limit — TooManyAttempts.
+
+    Счётчик живёт 60 секунд с первой попытки и исчезает сам.
+    """
+    attempts = r.incr(key)
+    if attempts == 1 or r.ttl(key) < 0:  # ttl < 0 — срок не выставился (сбой между командами)
+        r.expire(key, 60)
+    if attempts > limit:
+        raise TooManyAttempts
 
 
 @dataclass
@@ -82,7 +95,10 @@ def get_user(db: Session, user_id: int) -> User | None:
 
 # ---------- Вход по QR ----------
 
-def start_qr_login(r: Redis) -> str:
+def start_qr_login(r: Redis, client: str = "unknown") -> str:
+    """Новый одноразовый ключ для QR. client — адрес сайта-клиента: не больше
+    settings.qr_starts_per_minute ключей в минуту, иначе TooManyAttempts."""
+    _count_per_minute(r, f"login:qr_starts:{client}", settings.qr_starts_per_minute)
     # 24 случайных байта → 32 символа [A-Za-z0-9_-]: подходит для ссылки t.me/...?start=
     token = secrets.token_urlsafe(24)
     r.set(_qr_key(token), PENDING, ex=settings.login_ttl_seconds)
@@ -150,12 +166,7 @@ def redeem_code(r: Redis, code: str, client: str) -> int | None:
 
     client — адрес того, кто вводит код: для ограничения числа попыток.
     """
-    attempts_key = f"login:attempts:{client}"
-    attempts = r.incr(attempts_key)
-    if attempts == 1:
-        r.expire(attempts_key, 60)
-    if attempts > settings.code_attempts_per_minute:
-        raise TooManyAttempts
+    _count_per_minute(r, f"login:attempts:{client}", settings.code_attempts_per_minute)
 
     # getdel — прочитать и сразу удалить одной командой: код одноразовый.
     user_id = r.getdel(_code_key(code))
