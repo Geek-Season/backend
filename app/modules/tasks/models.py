@@ -10,7 +10,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -50,6 +50,12 @@ class Task(Base):
     # Подпись к метке источника, например «Пересдача 08.07.26».
     source_label: Mapped[str | None] = mapped_column(String(100))
     difficulty: Mapped[int] = mapped_column(Integer, default=50)
+    # Рейтинг задачи для PTS (app/modules/pts): «сложность по факту». None — ещё не считался,
+    # тогда старт — из difficulty. RD — уверенность, games — сколько первых попыток учтено.
+    rating: Mapped[float | None] = mapped_column(Float)
+    rating_rd: Mapped[float] = mapped_column(Float, default=250.0, server_default=text("250"))
+    rating_vol: Mapped[float] = mapped_column(Float, default=0.06, server_default=text("0.06"))
+    rating_games: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
     # Задачи не удаляем физически: по ним потом будут решения учеников.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)

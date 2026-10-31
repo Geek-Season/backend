@@ -17,6 +17,7 @@ ENV FORWARDED_ALLOW_IPS="*"
 # Логи (print и logging) сразу попадают в вывод контейнера, а не копятся в буфере.
 ENV PYTHONUNBUFFERED=1
 
-# При старте: применить миграции → наполнить базу → запустить сервер.
+# При старте: применить миграции → наполнить базу → пересчитать PTS (отчёт — в лог;
+# ошибка пересчёта сайт не останавливает) → запустить сервер.
 # exec — чтобы сигнал остановки от Docker дошёл до uvicorn и он завершился аккуратно.
-CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && { python -m app.modules.pts; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers; }"]

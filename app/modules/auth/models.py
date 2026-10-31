@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, func, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -34,6 +34,11 @@ class User(Base):
     telegram_photo_uid: Mapped[str | None] = mapped_column(String(64))
     # Пол: m, f или None (не указан). Нигде не показывается — на будущее (обращения на сайте).
     gender: Mapped[str | None] = mapped_column(String(1))
+    # PTS (app/modules/pts): рейтинг, уверенность (RD), волатильность, сколько ответов засчитано.
+    pts: Mapped[float] = mapped_column(Float, default=1000.0, server_default=text("1000"))
+    pts_rd: Mapped[float] = mapped_column(Float, default=200.0, server_default=text("200"))
+    pts_vol: Mapped[float] = mapped_column(Float, default=0.06, server_default=text("0.06"))
+    pts_games: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     # student — ученик; admin — может управлять банком задач.
     role: Mapped[str] = mapped_column(String(20), default="student", server_default=text("'student'"))
 

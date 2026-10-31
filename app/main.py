@@ -9,6 +9,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.exam.router import router as exam_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.progress.router import router as progress_router
+from app.modules.pts import models as _pts_models  # noqa: F401 — таблицы PTS (шаг 1: только пересчёт)
 from app.modules.rating.router import router as rating_router
 from app.modules.tasks.router import files_router, numbers_router, tasks_router
 
