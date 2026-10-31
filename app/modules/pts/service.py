@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.modules.admin.models import AdminAction
 from app.modules.auth.models import User
 from app.modules.exam.models import ExamSession
 from app.modules.progress.models import Attempt
@@ -49,6 +50,13 @@ CALIBRATING_TASK_GAMES = 20
 NEWBIE_GAMES = 20
 TYPICAL_DEFAULT = 1200.0  # типичный рейтинг задач номера, в котором задач нет
 EXAM_ATTEMPT_WINDOW = timedelta(minutes=5)  # попытка из пробника записывается при его завершении
+# Действия админа, которые меняют PTS: записаны в журнал и повторяются при пересчёте.
+ACTION_SET_PTS = "pts.set"
+ACTION_SET_RANK = "pts.rank"
+ACTION_RECALIBRATE = "pts.recalibrate"
+ACTION_RESET_STATS = "stats.reset"
+PTS_ACTIONS = (ACTION_SET_PTS, ACTION_SET_RANK, ACTION_RECALIBRATE, ACTION_RESET_STATS)
+
 ANCHOR_MIN, ANCHOR_MAX = 0.0, 3000.0  # где ищем PTS при калибровке по входному пробнику
 
 
@@ -238,6 +246,60 @@ class Engine:
         for side in mine.values():
             side.rating = max(0.0, side.rating + shift)
 
+    # ---------- Правки администратора (те же и вживую, и при пересчёте) ----------
+
+    def state(self, user_id: int) -> UserState:
+        return self.users.setdefault(user_id, UserState(Side(*_player_start())))
+
+    def shift(self, user_id: int, delta: float) -> None:
+        """Сдвинуть общий PTS и PTS по всем номерам на одно число (не ниже нуля)."""
+        user = self.state(user_id)
+        user.side.rating = max(0.0, user.side.rating + delta)
+        for (uid, _), side in self.numbers.items():
+            if uid == user_id:
+                side.rating = max(0.0, side.rating + delta)
+
+    def set_pts(self, user_id: int, pts: float, at: datetime) -> None:
+        """Админ выставил PTS: ранг — строго по прогнозу; ученик считается откалиброванным,
+        иначе следующий пробник «перекалибровал» бы его и стёр правку."""
+        user = self.state(user_id)
+        self.shift(user_id, max(0.0, pts) - user.side.rating)
+        user.calibrated_at = user.calibrated_at or at
+        user.rank_key = self.forecast(user_id).rank.key
+
+    def set_rank(self, user_id: int, rank_key: str, at: datetime) -> None:
+        """Админ выбрал ранг: PTS подбирается так, чтобы прогноз оказался в середине ранга."""
+        rank = ranks.by_key(rank_key)
+        upper = ranks.next_up(rank)
+        top = upper.min_primary if upper else ranks.FULL_PRIMARY
+        user = self.state(user_id)
+        self.anchor(user_id, (rank.min_primary + top) / 2)
+        user.calibrated_at = user.calibrated_at or at
+        user.rank_key = rank.key
+
+    def recalibrate(self, user_id: int) -> None:
+        """Сбросить калибровку: ранга нет, следующий завершённый пробник — снова входной."""
+        user = self.state(user_id)
+        user.calibrated_at = None
+        user.rank_key = None
+
+    def forget(self, user_id: int) -> None:
+        """Сброс всей статистики: ученик как новый."""
+        self.users.pop(user_id, None)
+        for key in [k for k in self.numbers if k[0] == user_id]:
+            del self.numbers[key]
+        self.seen = {pair for pair in self.seen if pair[0] != user_id}
+
+    def apply_admin(self, user_id: int, action: str, details: dict, at: datetime) -> None:
+        if action == ACTION_SET_PTS:
+            self.set_pts(user_id, float(details["pts"]), at)
+        elif action == ACTION_SET_RANK:
+            self.set_rank(user_id, details["rank"], at)
+        elif action == ACTION_RECALIBRATE:
+            self.recalibrate(user_id)
+        elif action == ACTION_RESET_STATS:
+            self.forget(user_id)
+
     def update_rank(
         self, user_id: int, calibrate_at: datetime | None = None, calibrate_primary: float | None = None
     ) -> tuple[ranks.Rank | None, bool]:
@@ -351,6 +413,19 @@ def finish_exam(db: Session, user: User, session: ExamSession) -> Outcome:
     return Outcome(engine.users[user.id].side.rating - before, len(touched), rank_up, calibrated_now)
 
 
+def admin_change(db: Session, user: User, action: str, details: dict, at: datetime) -> None:
+    """Правка администратора вживую (без commit — его делает вызывающий вместе с журналом)."""
+    engine = _load_engine(db, user)
+    engine.apply_admin(user.id, action, details, at)
+    state = engine.state(user.id)
+    user.pts, user.pts_rd, user.pts_vol, user.pts_games = state.side.rating, state.side.rd, state.side.vol, state.side.games
+    user.rank_key, user.calibrated_at = state.rank_key, state.calibrated_at
+    for (uid, nid), side in engine.numbers.items():
+        row = db.get(UserNumberRating, (uid, nid))
+        if row is not None:
+            row.pts, row.rd, row.vol, row.games = side.rating, side.rd, side.vol, side.games
+
+
 # ---------- Полный пересчёт ----------
 
 @dataclass
@@ -364,11 +439,12 @@ class Summary:
 @dataclass(order=True)
 class _Event:
     at: datetime
-    order: int  # при равном времени: сначала попытки, потом пробник целиком
+    order: int  # при равном времени: сначала попытки, потом пробник целиком, потом правка админа
     key: int
     user_id: int = field(compare=False)
     attempt: Attempt | None = field(compare=False, default=None)
     session: ExamSession | None = field(compare=False, default=None)
+    admin: AdminAction | None = field(compare=False, default=None)
 
 
 def recompute_all(db: Session) -> Summary:
@@ -397,6 +473,11 @@ def recompute_all(db: Session) -> Summary:
 
     events = [_Event(a.created_at, 0, a.id, a.user_id, attempt=a) for a in db.scalars(select(Attempt))]
     events += [_Event(s.finished_at, 1, s.id, s.user_id, session=s) for s in sessions]
+    events += [
+        _Event(a.created_at, 2, a.id, a.user_id, admin=a)
+        for a in db.scalars(select(AdminAction).where(AdminAction.action.in_(PTS_ACTIONS),
+                                                      AdminAction.user_id.is_not(None)))
+    ]
     events.sort()
 
     changes: list[PtsChange] = []
@@ -423,6 +504,8 @@ def recompute_all(db: Session) -> Summary:
             if result is not None:
                 keep(a.user_id, a.task_id, result, score, a.id, None, a.created_at)
                 engine.update_rank(a.user_id)
+        elif event.admin is not None:
+            engine.apply_admin(event.user_id, event.admin.action, event.admin.details or {}, event.admin.created_at)
         else:
             s = event.session
             for task_id, score in exam_scores(s).items():

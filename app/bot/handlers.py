@@ -91,8 +91,15 @@ def start_plain(api: BotApi, chat_id: int, first_name: str) -> None:
     )
 
 
+BLOCKED_TEXT = "Ваш аккаунт на сайте заблокирован. Если это ошибка — напишите преподавателю."
+
+
 def login_code(api: BotApi, r: Redis, db: Session, chat_id: int, user: dict) -> None:
-    code = service.issue_code(r, db, _profile(user))
+    try:
+        code = service.issue_code(r, db, _profile(user))
+    except service.AccountBlocked:
+        api.send_message(chat_id, BLOCKED_TEXT)
+        return
     api.send_message(
         chat_id,
         f"Ваш код для входа: <code>{code}</code>\n"
@@ -103,11 +110,14 @@ def login_code(api: BotApi, r: Redis, db: Session, chat_id: int, user: dict) -> 
 def qr_answer(api: BotApi, r: Redis, db: Session, callback: dict) -> None:
     _, answer, token = callback["data"].split(":", 2)
     if answer == "yes":
-        ok = service.confirm_qr_login(r, db, token, _profile(callback["from"]))
-        text = (
-            "Готово ✅ Вернитесь на сайт — вход выполнится автоматически."
-            if ok else "Ссылка устарела. Обновите страницу входа на сайте."
-        )
+        try:
+            ok = service.confirm_qr_login(r, db, token, _profile(callback["from"]))
+            text = (
+                "Готово ✅ Вернитесь на сайт — вход выполнится автоматически."
+                if ok else "Ссылка устарела. Обновите страницу входа на сайте."
+            )
+        except service.AccountBlocked:
+            text = BLOCKED_TEXT
     else:
         service.decline_qr_login(r, token)
         text = "Вход отменён."

@@ -225,3 +225,27 @@ def test_no_aiogram_in_bot():
     code = "import sys, app.bot.__main__; print('aiogram' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False"
+
+
+# ---------- Заблокированный ученик ----------
+
+def _block(db):
+    from datetime import UTC, datetime
+
+    user = service.upsert_user(db, service.TelegramProfile(telegram_id=USER["id"], first_name="Вася"))
+    user.blocked_at = datetime.now(UTC)
+    db.commit()
+
+
+def test_blocked_gets_no_code(api, fake_redis, db):
+    _block(db)
+    handle_update(api, fake_redis, db, message("/login"))
+    assert "заблокирован" in api.sent[0]["text"] and "<code>" not in api.sent[0]["text"]
+
+
+def test_blocked_qr_yes(api, fake_redis, db, client):
+    _block(db)
+    token = service.start_qr_login(fake_redis)
+    handle_update(api, fake_redis, db, callback(f"qr:yes:{token}"))
+    assert "заблокирован" in api.edited[0]["text"] and api.answered == ["cb1"]
+    assert client.get(f"/auth/telegram/status/{token}").json()["status"] == "declined"

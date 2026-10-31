@@ -44,6 +44,8 @@ class User(Base):
     calibrated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # student — ученик; admin — может управлять банком задач.
     role: Mapped[str] = mapped_column(String(20), default="student", server_default=text("'student'"))
+    # Заблокирован администратором: не может войти, пропадает из рейтинга. None — не заблокирован.
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -67,6 +69,10 @@ class User(Base):
     def avatar_url(self) -> str | None:
         """Адрес аватарки в API (сайт добавляет к нему адрес сервера). None — показать букву."""
         return f"/avatars/{self.avatar_file}" if self.avatar_file else None
+
+    @property
+    def is_blocked(self) -> bool:
+        return self.blocked_at is not None
 
     @property
     def is_admin(self) -> bool:
