@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user
 from app.modules.auth.models import User
+from app.modules.pts.schemas import RankRead
 from app.modules.rating import service
 
 router = APIRouter(prefix="/rating", tags=["Рейтинг"])
@@ -24,6 +25,7 @@ class RatingRow(BaseModel):
     has_nickname: bool
     avatar_url: str | None
     has_custom_avatar: bool
+    rank: RankRead | None = None
     points: int
     is_me: bool
 

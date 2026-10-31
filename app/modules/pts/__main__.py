@@ -1,4 +1,4 @@
-"""Пересчитать PTS по всем попыткам и напечатать отчёт (шаг 1 — сайт PTS пока не показывает).
+"""Пересчитать PTS по всем попыткам и пробникам с нуля и напечатать отчёт.
 
 Запуск:  python -m app.modules.pts
 При старте контейнера api запускается сам (Dockerfile), отчёт — в логе api.
@@ -23,13 +23,13 @@ def main() -> None:
         summary = service.recompute_all(db)
         rows = service.report(db)
         median = statistics.median(summary.changes) if summary.changes else 0
-        print(f"PTS (пробный пересчёт, на сайте пока не виден): учеников {summary.users}, "
-              f"засчитано первых попыток {summary.attempts}, задач с ответами {summary.tasks_rated}, "
-              f"медиана изменения за ответ {median:.0f} PTS")
+        print(f"PTS (пересчёт по истории): учеников {summary.users}, засчитано задач {summary.counted}, "
+              f"задач с ответами {summary.tasks_rated}, медиана изменения за ответ {median:.0f} PTS")
         for place, row in enumerate(rows[:TOP], start=1):
             f = row.forecast
-            print(f"PTS {place:>2}. {row.name[:20]:<20} PTS {row.pts:>5.0f} ±{row.rd:<3.0f} ответов {row.games:>3} "
-                  f"прогноз {f.primary_exact:4.1f} перв. → {f.test_score:>3} баллов — {f.rank.title}")
+            rank = row.rank.title if row.rank else "ранга нет — не было входного пробника"
+            print(f"PTS {place:>2}. {row.name[:20]:<20} PTS {row.pts:>5.0f} ±{row.rd:<3.0f} задач {row.games:>3} "
+                  f"прогноз {f.primary_exact:4.1f} перв. → {f.test_score:>3} баллов — {rank}")
         rated = list(db.scalars(select(Task).where(Task.rating_games >= 5).order_by(Task.rating.desc())))
         if rated:
             for label, task in (("самая сложная", rated[0]), ("самая лёгкая", rated[-1])):

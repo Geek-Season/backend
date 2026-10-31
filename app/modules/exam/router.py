@@ -21,6 +21,7 @@ from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.exam import service
 from app.modules.exam.models import ExamSession
+from app.modules.pts.schemas import RankRead
 from app.modules.tasks.schemas import TaskFileRead
 
 router = APIRouter(prefix="/exam", tags=["Пробник"])
@@ -63,6 +64,9 @@ class ExamView(BaseModel):
     university_passed: bool | None = Field(description="Порог для поступления в вуз: 46 тестовых")
     answered: int
     items: list[ExamItem]
+    pts_delta: float | None = Field(default=None, description="Сколько PTS дал пробник (после завершения)")
+    rank_up: RankRead | None = Field(default=None, description="Новый ранг — только в ответе на завершение")
+    calibrated_now: bool = Field(default=False, description="Это был входной пробник: ранг появился")
 
 
 class ExamHistoryItem(BaseModel):

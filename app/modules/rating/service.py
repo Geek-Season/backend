@@ -104,6 +104,7 @@ def leaderboard(r: Redis, db: Session, period: str, limit: int, user_id: int | N
             "has_nickname": user.nickname is not None,  # админу — кнопка «сбросить ник»
             "avatar_url": user.avatar_url,
             "has_custom_avatar": user.avatar_custom,  # админу — «сбросить аватарку»
+            "rank": user.rank_info,  # другим виден только ранг — ни PTS, ни прогноз
             "points": int(score),
             "is_me": user.id == user_id,
         })

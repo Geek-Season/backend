@@ -98,16 +98,32 @@ def test_forecast_example_from_plan():
     codes = [str(i) for i in range(1, 19)] + ["19-21", "22", "23", "24", "25", "26", "27"]
     typical = dict.fromkeys(codes, 1500.0)
     strong, weak = 1500 + 400 * 0.7533, 1500 - 400 * 0.3680  # шанс 0,85 и 0,3
-    number_pts = {c: (strong if c.isdigit() and int(c) <= 15 else weak, 5) for c in codes}
-    f = ranks.forecast(number_pts, typical)
+    number_pts = {c: strong if c.isdigit() and int(c) <= 15 else weak for c in codes}
+    f = ranks.forecast(number_pts, 1000.0, typical)
     assert f.primary_exact == pytest.approx(16.95, abs=0.05)
     assert (f.primary, f.test_score, f.rank.title) == (17, 70, "Легенда экселя")
 
 
-def test_untried_numbers_count_zero():
+def test_untried_numbers_use_overall_pts():
     typical = {"1": 1000.0, "2": 1000.0}
-    f = ranks.forecast({"1": (3000.0, 5), "2": (3000.0, 2)}, typical)  # по № 2 только 2 ответа
-    assert f.primary == 1
+    f = ranks.forecast({"1": 3000.0}, 1000.0, typical)  # по № 2 ответов нет — шанс по общему PTS
+    assert f.primary_exact == pytest.approx(1.0 + 0.5, abs=0.01)
+
+
+@pytest.mark.parametrize("current, primary, expected_key", [
+    (None, 12, "hero"),          # первый ранг — сразу по прогнозу
+    ("hero", 14, "legend"),      # повышение — сразу
+    ("hero", 9, "hero"),         # на 1 ниже границы (10) — ещё Герой
+    ("hero", 8, "knight"),       # на 2 ниже — понижение
+    ("hero", 3, "recruit"),
+])
+def test_rank_protection(current, primary, expected_key):
+    assert ranks.next_rank(ranks.by_key(current), primary).key == expected_key
+
+
+def test_next_up():
+    assert ranks.next_up(ranks.by_key("hero")).key == "legend"
+    assert ranks.next_up(ranks.by_key("immortal")) is None
 
 
 # ---------- Пересчёт по истории ----------
@@ -145,7 +161,7 @@ def test_recompute_counts_first_attempt_only(db, people):
     add_attempt(db, petya, task, "2 20", True, 2)
     db.commit()
     summary = service.recompute_all(db)
-    assert summary.attempts == 2 and summary.users == 2
+    assert summary.counted == 2 and summary.users == 2
     db.refresh(vasya), db.refresh(petya)
     assert vasya.pts < 1000 < petya.pts
     assert vasya.pts_games == 1
@@ -191,8 +207,7 @@ def test_report_and_forecast(db, people):
     service.recompute_all(db)
     [row] = service.report(db)
     assert row.name == "Вася" and row.games == 3
-    assert 0 < row.forecast.primary_exact <= 1  # уверенно только № 1 — до 1 первичного
-    assert row.forecast.rank.key == "recruit"
+    assert row.rank is None  # входного пробника не было — ранга нет
 
 
 def test_command_prints_report(db, people, capsys):
@@ -203,4 +218,4 @@ def test_command_prints_report(db, people, capsys):
     db.commit()
     main()
     out = capsys.readouterr().out
-    assert "учеников 1" in out and "Вася" in out and "Рекрут ворда" in out
+    assert "учеников 1" in out and "Вася" in out and "ранга нет" in out

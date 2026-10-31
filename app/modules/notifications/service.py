@@ -22,6 +22,9 @@ def render(event: dict) -> str | None:
     """Текст уведомления по событию или None, если о событии не сообщаем."""
     kind = event["event"]
     if kind == "achievement.granted":
+        if event.get("code", "").startswith("rank_"):
+            return (f"{event['icon']} Новый ранг: <b>{event['title']}</b>!\n{event['description']}.\n"
+                    "Карточка ранга — в профиле на сайте.")
         return f"{event['icon']} Новое достижение: <b>{event['title']}</b>\n{event['description']}"
     if kind == "exam.finished":
         approx = "≈" if event.get("test_score_approximate") else ""
