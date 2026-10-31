@@ -76,6 +76,7 @@ python -m app.worker             # обработчик очередей
 | Ученик | `GET /me/stats`, `GET /me/achievements`, `GET /me/notifications` |
 | Пробник | `POST /exam/start`, `GET /exam/current`, `GET /exam/history`, `GET /exam/{id}`, `PUT /exam/{id}/answers/{position}`, `POST /exam/{id}/finish` |
 | Рейтинг | `GET /rating?period=week\|all` |
+| Админка (admin) | `GET /admin/users`, `GET\|PATCH /admin/users/{id}`, `POST /admin/users/{id}/pts`, `POST /admin/users/{id}/recalibrate`, `POST /admin/users/{id}/reset-stats`, `DELETE /admin/users/{id}/avatar`, `GET /admin/actions` |
 
 Неверный ответ ученика возвращается с кодом `200` и `is_correct: false`; ошибки запроса — `401`, `403`, `404`, `409`, `422`, `429`.
 
@@ -96,6 +97,8 @@ app/
     ├── progress/        attempts; статистика, слабые номера
     ├── exam/            exam_sessions, exam_answers; вариант, таймер, баллы, шкала 2026
     ├── rating/          рейтинг в Redis sorted set
+    ├── pts/             user_number_ratings, pts_changes; PTS (Glicko-2), ранги, прогноз балла
+    ├── admin/           admin_actions; ученики в админке, журнал действий админов
     ├── achievements/    achievements, user_achievements
     └── notifications/   notifications
 alembic/versions/        миграции
@@ -149,7 +152,13 @@ API публикует событие и отвечает, не дожидаяс
 (сеть, 429, 5xx) повторяются, постоянные (бот заблокирован) сохраняются в `notifications.error`.
 
 **Роли.** `student` — любой вошедший пользователь, `admin` — управление банком задач. Роль администратора
-выдаётся по `ADMIN_TELEGRAM_IDS` или командой `python -m app.make_admin @username`.
+выдаётся по `ADMIN_TELEGRAM_IDS`, командой `python -m app.make_admin @username` или в админке.
+
+**Админка.** Любой админ может: менять ник и дату регистрации, сбрасывать аватарку, назначать и снимать
+админов (кроме себя), блокировать учеников (заблокированный не входит на сайт и пропадает из рейтинга),
+выставлять PTS числом или рангом, сбрасывать калибровку (следующий пробник снова входной) и всю статистику.
+Каждое действие пишется в `admin_actions`. Правки PTS — ещё и события пересчёта: `recompute_all` повторяет
+их в том же порядке, что и ответы, поэтому они не пропадают при пересчёте во время запуска.
 
 ## Тесты
 

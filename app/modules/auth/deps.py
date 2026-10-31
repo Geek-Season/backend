@@ -20,6 +20,15 @@ from app.modules.auth.tokens import read_user_id
 # auto_error=False — чтобы самим вернуть понятное сообщение на русском.
 bearer = HTTPBearer(auto_error=False)
 
+BLOCKED_MESSAGE = "Аккаунт заблокирован"
+
+
+def _not_blocked(user: User | None) -> User | None:
+    """Заблокированному — 403 на любой запрос с его токеном (сайт покажет сообщение и выйдет)."""
+    if user is not None and user.is_blocked:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, BLOCKED_MESSAGE)
+    return user
+
 
 def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -33,7 +42,7 @@ def get_optional_user(
     if credentials is None:
         return None
     user_id = read_user_id(credentials.credentials)
-    return get_user(db, user_id) if user_id is not None else None
+    return _not_blocked(get_user(db, user_id)) if user_id is not None else None
 
 
 def get_current_user(
@@ -53,7 +62,7 @@ def get_current_user(
     user = get_user(db, user_id)
     if user is None:
         raise unauthorized
-    return user
+    return _not_blocked(user)
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

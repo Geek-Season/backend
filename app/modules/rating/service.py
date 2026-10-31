@@ -59,8 +59,9 @@ def rebuild(r: Redis, db: Session) -> None:
     """Пересобрать рейтинг из базы."""
     now = _now()
     key = week_key(now)
-    all_time = progress.first_solves(db)
-    this_week = progress.first_solves(db, since=_week_start(now))
+    blocked = set(db.scalars(select(User.id).where(User.blocked_at.is_not(None))))
+    all_time = {uid: n for uid, n in progress.first_solves(db).items() if uid not in blocked}
+    this_week = {uid: n for uid, n in progress.first_solves(db, since=_week_start(now)).items() if uid not in blocked}
 
     pipe = r.pipeline()
     pipe.delete(ALL_KEY, key)
@@ -93,7 +94,7 @@ def leaderboard(r: Redis, db: Session, period: str, limit: int, user_id: int | N
     rows = []
     for member, score in top:
         user = users.get(int(member))
-        if user is None:  # пользователя удалили — пропускаем
+        if user is None or user.is_blocked:  # удалён или заблокирован — пропускаем
             continue
         rows.append({
             "place": place_for(score),

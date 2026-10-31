@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 
 from app.modules.achievements.router import router as achievements_router
+from app.modules.admin.router import router as admin_router
 from app.modules.auth.router import avatars_router
 from app.modules.auth.router import router as auth_router
 from app.modules.exam.router import router as exam_router
@@ -16,7 +17,7 @@ from app.modules.tasks.router import files_router, numbers_router, tasks_router
 app = FastAPI(
     title="Geek Season",
     description="Подготовка к ЕГЭ по информатике: банк номеров, прототипы и проверка ответов.",
-    version="0.7.0",
+    version="0.8.0",
 )
 
 # Сайт на другом адресе (например, GitHub Pages), API — на сервере: браузеру нужно
@@ -43,6 +44,7 @@ app.include_router(exam_router)
 app.include_router(rating_router)
 app.include_router(achievements_router)
 app.include_router(notifications_router)
+app.include_router(admin_router)
 
 
 @app.get("/", tags=["Проверка запуска"])

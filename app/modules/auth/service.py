@@ -109,11 +109,19 @@ def is_qr_pending(r: Redis, token: str) -> bool:
     return r.get(_qr_key(token)) == PENDING
 
 
+class AccountBlocked(Exception):
+    """Аккаунт заблокирован администратором — бот не выдаёт вход."""
+
+
 def confirm_qr_login(r: Redis, db: Session, token: str, profile: TelegramProfile) -> bool:
-    """Бот: человек нажал «Да». False — если ключ устарел или уже обработан."""
+    """Бот: человек нажал «Да». False — если ключ устарел или уже обработан.
+    Аккаунт заблокирован — AccountBlocked."""
     if not is_qr_pending(r, token):
         return False
     user = upsert_user(db, profile)
+    if user.is_blocked:
+        decline_qr_login(r, token)
+        raise AccountBlocked
     # xx=True — записать, только если ключ ещё существует; keepttl — не продлевать срок.
     return bool(r.set(_qr_key(token), f"{CONFIRMED_PREFIX}{user.id}", xx=True, keepttl=True))
 
@@ -145,8 +153,11 @@ def check_qr_login(r: Redis, token: str) -> tuple[str, int | None]:
 # ---------- Вход по коду ----------
 
 def issue_code(r: Redis, db: Session, profile: TelegramProfile) -> str:
-    """Бот: /login → новый 6-значный код. Предыдущий код этого человека сгорает."""
+    """Бот: /login → новый 6-значный код. Предыдущий код этого человека сгорает.
+    Аккаунт заблокирован — AccountBlocked."""
     user = upsert_user(db, profile)
+    if user.is_blocked:
+        raise AccountBlocked
 
     old_code = r.get(f"login:user_code:{user.id}")
     if old_code:
