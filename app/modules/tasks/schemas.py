@@ -9,7 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Source = Literal["demo", "official", "author"]
+# demo — демоверсия, official — реальный экзамен, approbation — апробация, author — авторская.
+Source = Literal["demo", "official", "approbation", "author"]
 Sort = Literal["new", "old", "easy", "hard"]
 # Фильтр по прогрессу ученика: solved — решённые, unsolved — ещё не решённые верно.
 ProgressFilter = Literal["solved", "unsolved"]
