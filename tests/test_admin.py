@@ -112,7 +112,7 @@ def test_recalibrate_makes_next_exam_entrance(admin_client, client, db, student)
 def test_reset_stats(admin_client, client, db, fake_redis, student):
     headers, user_id = student
     check(client, headers, TASK_17, "2 20")
-    finish_exam(client, db, headers, {"5"})
+    finish_exam(client, db, headers, {"5"})  # входной → есть ранг → в рейтинге
     assert client.get("/rating?period=all").json()["participants"] == 1
 
     body = admin_client.post(f"/admin/users/{user_id}/reset-stats").json()
@@ -129,7 +129,8 @@ def test_reset_stats(admin_client, client, db, fake_redis, student):
 
 def test_block_and_unblock(admin_client, client, db, fake_redis, student):
     headers, user_id = student
-    check(client, headers, TASK_17, "2 20")
+    admin_client.post(f"/admin/users/{user_id}/pts", json={"rank": "hero"})  # с рангом — в рейтинге
+    assert client.get("/rating?period=all").json()["participants"] == 1
     body = admin_client.patch(f"/admin/users/{user_id}", json={"blocked": True}).json()
     assert body["blocked"] is True and body["actions"][0]["text"] == "заблокировал"
 

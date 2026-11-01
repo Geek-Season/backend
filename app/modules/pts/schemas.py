@@ -21,6 +21,7 @@ class MyRank(BaseModel):
     rank_min_primary: int | None = Field(description="С какого первичного балла начинается текущий ранг")
     next_rank: RankRead | None = Field(description="Следующий ранг (null — уже Immortal)")
     next_min_primary: int | None
+    immortal_place: int | None = Field(default=None, description="Место среди Immortal («Immortal #3»)")
 
 
 def rank_read(rank) -> dict | None:

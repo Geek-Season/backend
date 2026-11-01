@@ -21,7 +21,6 @@ from app.modules.admin.schemas import ActionList, AdminUserDetail, AdminUserList
 from app.modules.auth import avatars
 from app.modules.auth.deps import require_admin
 from app.modules.auth.models import User
-from app.modules.rating import service as rating
 
 router = APIRouter(prefix="/admin", tags=["Админка"])
 
@@ -60,12 +59,10 @@ def patch_user(
     user_id: int,
     body: UserPatch,
     db: Session = Depends(get_db),
-    r: Redis = Depends(get_redis),
     admin: User = Depends(require_admin),
 ):
     user = _target(db, user_id)
     fields = body.model_fields_set
-    rebuild = False
     try:
         if "nickname" in fields:
             service.set_nickname(db, admin, user, body.nickname)
@@ -76,13 +73,11 @@ def patch_user(
         if "role" in fields and body.role is not None:
             service.set_role(db, admin, user, body.role)
         if "blocked" in fields and body.blocked is not None:
-            rebuild = service.set_blocked(db, admin, user, body.blocked)
+            service.set_blocked(db, admin, user, body.blocked)
     except service.AdminError as error:
         db.rollback()
         raise _bad(error) from None
     db.commit()
-    if rebuild:
-        rating.rebuild(r, db)  # заблокированный пропадает из рейтинга, разблокированный возвращается
     return service.detail(db, user)
 
 
