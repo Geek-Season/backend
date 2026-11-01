@@ -12,12 +12,13 @@ from app.modules.notifications.router import router as notifications_router
 from app.modules.progress.router import router as progress_router
 from app.modules.pts.router import router as pts_router
 from app.modules.rating.router import router as rating_router
+from app.modules.site.router import router as site_router
 from app.modules.tasks.router import files_router, numbers_router, tasks_router
 
 app = FastAPI(
     title="Geek Season",
     description="Подготовка к ЕГЭ по информатике: банк номеров, прототипы и проверка ответов.",
-    version="0.10.0",
+    version="0.11.0",
 )
 
 # Сайт на другом адресе (например, GitHub Pages), API — на сервере: браузеру нужно
@@ -45,6 +46,7 @@ app.include_router(rating_router)
 app.include_router(achievements_router)
 app.include_router(notifications_router)
 app.include_router(admin_router)
+app.include_router(site_router)
 
 
 @app.get("/", tags=["Проверка запуска"])

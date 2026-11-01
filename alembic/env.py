@@ -26,6 +26,7 @@ from app.modules.exam import models as _exam_models  # noqa: E402,F401
 from app.modules.notifications import models as _notifications_models  # noqa: E402,F401
 from app.modules.progress import models as _progress_models  # noqa: E402,F401
 from app.modules.pts import models as _pts_models  # noqa: E402,F401
+from app.modules.site import models as _site_models  # noqa: E402,F401
 from app.modules.tasks import models as _tasks_models  # noqa: E402,F401
 
 config.set_main_option("sqlalchemy.url", settings.database_url)
