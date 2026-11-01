@@ -9,6 +9,18 @@ class DayActivity(BaseModel):
     correct: int
 
 
+class Calendar(BaseModel):
+    """Календарь активности за последний год: в days — только дни, когда были ответы."""
+
+    start: date
+    end: date = Field(description="Сегодня (по Москве)")
+    days: list[DayActivity]
+    total: int = Field(description="Ответов за год")
+    active_days: int = Field(description="Дней с ответами за год")
+    best_streak: int = Field(description="Лучшая серия дней подряд за год")
+    streak: int = Field(description="Текущая серия дней подряд")
+
+
 class NumberProgress(BaseModel):
     code: str
     title: str
@@ -43,7 +55,8 @@ class UserStats(BaseModel):
     accuracy: float | None = Field(description="Доля верных ответов от 0 до 1; null — ответов ещё нет")
     streak_days: int = Field(description="Дней подряд с хотя бы одним ответом")
     active_days: int
-    activity: list[DayActivity] = Field(description="Последние 14 дней, по порядку")
+    activity: list[DayActivity] = Field(description="Последние 14 дней, по порядку (сайт рисует calendar)")
+    calendar: Calendar
     by_number: list[NumberProgress]
     weak_numbers: list[WeakNumber] = Field(description="Что повторить: до 5 номеров, сначала самые проблемные")
     recent: list[RecentAttempt]

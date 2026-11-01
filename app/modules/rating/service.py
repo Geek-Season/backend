@@ -190,3 +190,41 @@ def leaderboard(db: Session, period: str = "all", number: str | None = None, ran
         "top": top,
         "me": mine,
     }
+
+
+# ---------- Карточка ученика (по клику на строку рейтинга) ----------
+
+def place_of(db: Session, user: User) -> int | None:
+    """Место в общей таблице (по PTS); None — ученика в ней нет (нет ранга или заблокирован)."""
+    if user.rank_key is None or user.blocked_at is not None:
+        return None
+    entries = _board(db, "all", None)
+    places = _places(entries)
+    return next((p for e, p in zip(entries, places) if e.user.id == user.id), None)
+
+
+def card(db: Session, user: User) -> dict:
+    """Что видят все: имя, аватарка, ранг и место, «занимается с», решено, серия, достижения,
+    календарь активности. Ни PTS, ни прогноза, ни пробников, ни @username."""
+    from app.modules.achievements import service as achievements
+    from app.modules.progress import service as progress
+
+    got = [a for a in achievements.list_for_user(db, user.id) if a["received_at"]]
+    from app.modules.achievements.catalog import ACHIEVEMENTS
+
+    total = len(ACHIEVEMENTS)
+    calendar = progress.calendar(db, user.id)
+    return {
+        "user_id": user.id,
+        "name": user.display_name,
+        "avatar_url": user.avatar_url,
+        "rank": user.rank_info,
+        "immortal_place": immortal_places(db).get(user.id) if user.rank_key == IMMORTAL else None,
+        "place": place_of(db, user),
+        "since": user.created_at,
+        "solved": progress.solved_count(db, user.id),
+        "streak": calendar["streak"],
+        "achievements": [{"code": a["code"], "icon": a["icon"], "title": a["title"]} for a in got],
+        "achievements_total": total,
+        "calendar": calendar,
+    }
