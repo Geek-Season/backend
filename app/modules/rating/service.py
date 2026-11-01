@@ -210,7 +210,9 @@ def card(db: Session, user: User) -> dict:
     from app.modules.progress import service as progress
 
     got = [a for a in achievements.list_for_user(db, user.id) if a["received_at"]]
-    total = db.scalar(select(func.count()).select_from(achievements.Achievement))
+    from app.modules.achievements.catalog import ACHIEVEMENTS
+
+    total = len(ACHIEVEMENTS)
     calendar = progress.calendar(db, user.id)
     return {
         "user_id": user.id,
