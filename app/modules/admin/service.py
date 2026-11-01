@@ -88,6 +88,10 @@ def describe(action: str, details: dict, female: bool = False) -> str:
             return verb("заблокировал")
         case "user.unblock":
             return verb("разблокировал")
+        case "site.exam_date":
+            after = (details.get("after") or {}).get("exam_date")
+            return (f"{verb('изменил')} дату ЕГЭ: {_date(before.get('exam_date'))} → {_date(after)}" if after
+                    else f"{verb('убрал')} дату ЕГЭ")
     return action
 
 

@@ -76,6 +76,7 @@ python -m app.worker             # обработчик очередей
 | Ученик | `GET /me/stats` (с календарём активности за год), `GET /me/achievements`, `GET /me/notifications` |
 | Пробник | `POST /exam/start`, `GET /exam/current`, `GET /exam/history`, `GET /exam/{id}`, `PUT /exam/{id}/answers/{position}`, `POST /exam/{id}/finish` |
 | Рейтинг | `GET /rating?period=all\|week&number=27&rank=legend`, `GET /rating/users/{id}` (карточка ученика) |
+| Сайт | `GET /site` (дата ЕГЭ для счётчика на главной), `PUT /admin/site` (admin) |
 | Админка (admin) | `GET /admin/users`, `GET\|PATCH /admin/users/{id}`, `POST /admin/users/{id}/pts`, `POST /admin/users/{id}/recalibrate`, `POST /admin/users/{id}/reset-stats`, `DELETE /admin/users/{id}/avatar`, `GET /admin/actions` |
 
 Неверный ответ ученика возвращается с кодом `200` и `is_correct: false`; ошибки запроса — `401`, `403`, `404`, `409`, `422`, `429`.
@@ -99,6 +100,7 @@ app/
     ├── rating/          таблица лидеров по PTS: всё время, неделя, номер ЕГЭ
     ├── pts/             user_number_ratings, pts_changes; PTS (Glicko-2), ранги, прогноз балла
     ├── admin/           admin_actions; ученики в админке, журнал действий админов
+    ├── site/            site_settings; настройки сайта (дата ЕГЭ)
     ├── achievements/    achievements, user_achievements
     └── notifications/   notifications
 alembic/versions/        миграции
