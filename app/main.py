@@ -17,7 +17,7 @@ from app.modules.tasks.router import files_router, numbers_router, tasks_router
 app = FastAPI(
     title="Geek Season",
     description="Подготовка к ЕГЭ по информатике: банк номеров, прототипы и проверка ответов.",
-    version="0.8.0",
+    version="0.9.0",
 )
 
 # Сайт на другом адресе (например, GitHub Pages), API — на сервере: браузеру нужно

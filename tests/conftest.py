@@ -103,6 +103,22 @@ def login(client, fake_redis, db):
 
 
 @pytest.fixture
+def ranked(db):
+    """ranked(user_id, ранг, PTS) — выдать ученику ранг напрямую (как после входного пробника):
+    в таблицу лидеров попадают только ученики с рангом."""
+    from datetime import UTC, datetime
+
+    from app.modules.auth.models import User
+
+    def _ranked(user_id: int, rank: str = "hero", pts: float = 1200.0) -> None:
+        user = db.get(User, user_id)
+        user.rank_key, user.pts, user.calibrated_at = rank, pts, datetime.now(UTC)
+        db.commit()
+
+    return _ranked
+
+
+@pytest.fixture
 def events(monkeypatch):
     """Список опубликованных событий [(event, payload), ...] вместо настоящего RabbitMQ."""
     from app.core import events as events_module

@@ -75,7 +75,7 @@ python -m app.worker             # обработчик очередей
 | Вход | `POST /auth/telegram/start`, `GET /auth/telegram/status/{key}`, `POST /auth/code`, `GET /auth/me` |
 | Ученик | `GET /me/stats`, `GET /me/achievements`, `GET /me/notifications` |
 | Пробник | `POST /exam/start`, `GET /exam/current`, `GET /exam/history`, `GET /exam/{id}`, `PUT /exam/{id}/answers/{position}`, `POST /exam/{id}/finish` |
-| Рейтинг | `GET /rating?period=week\|all` |
+| Рейтинг | `GET /rating?period=all\|week&number=27&rank=legend` |
 | Админка (admin) | `GET /admin/users`, `GET\|PATCH /admin/users/{id}`, `POST /admin/users/{id}/pts`, `POST /admin/users/{id}/recalibrate`, `POST /admin/users/{id}/reset-stats`, `DELETE /admin/users/{id}/avatar`, `GET /admin/actions` |
 
 Неверный ответ ученика возвращается с кодом `200` и `is_correct: false`; ошибки запроса — `401`, `403`, `404`, `409`, `422`, `429`.
@@ -96,7 +96,7 @@ app/
     ├── tasks/           exam_numbers, tasks, task_parts, task_files; поиск, проверка ответов, редактор, файлы
     ├── progress/        attempts; статистика, слабые номера
     ├── exam/            exam_sessions, exam_answers; вариант, таймер, баллы, шкала 2026
-    ├── rating/          рейтинг в Redis sorted set
+    ├── rating/          таблица лидеров по PTS: всё время, неделя, номер ЕГЭ
     ├── pts/             user_number_ratings, pts_changes; PTS (Glicko-2), ранги, прогноз балла
     ├── admin/           admin_actions; ученики в админке, журнал действий админов
     ├── achievements/    achievements, user_achievements
@@ -134,8 +134,10 @@ QR-ключей — не более 10 в минуту с адреса (`QR_STAR
 принимаются и пробник завершается автоматически. Первичный балл переводится в тестовый по шкале 2026 года.
 Redis хранит указатель на идущий пробник и блокировку от повторного старта.
 
-**Рейтинг.** Очко начисляется за первое решение задачи. Рейтинги за неделю и за всё время — sorted set'ы
-Redis; при потере данных пересобираются из `attempts`.
+**Рейтинг.** Таблица лидеров по PTS, только ученики с рангом (после входного пробника). «Всё время» — по общему
+PTS, «неделя» — по приросту PTS с понедельника (входной пробник и правки админа не в счёт), «по номеру» — по PTS
+в номере. Другим виден только ранг (у Immortal — ещё место: «Immortal #3»); свой PTS ученик видит в поле `me`.
+Считается запросом к PostgreSQL. Старые ключи Redis `rating:*` больше не используются.
 
 **События (RabbitMQ).**
 

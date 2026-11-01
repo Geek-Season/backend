@@ -78,11 +78,11 @@ def test_return_telegram_photo(client, login, no_telegram):
     assert no_telegram == [body["id"], body["id"]]  # при входе и после «вернуть» — фото из Telegram в фоне
 
 
-def test_admin_resets_avatar(client, admin_client, login, no_telegram):
+def test_admin_resets_avatar(client, admin_client, login, no_telegram, ranked):
     h = login()
     upload(client, h)
     user_id = me(client, h)["id"]
-    client.post("/tasks/8/check", json={"answer": "2 20"}, headers=h)
+    ranked(user_id)
     row = client.get("/rating?period=all").json()["top"][0]
     assert row["avatar_url"].startswith("/avatars/") and row["has_custom_avatar"] is True
     assert client.delete(f"/auth/users/{user_id}/avatar", headers=h).status_code == 403

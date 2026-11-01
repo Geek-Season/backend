@@ -30,7 +30,6 @@ from app.modules.progress import service as progress
 from app.modules.progress.models import Attempt
 from app.modules.pts import service as pts
 from app.modules.pts.schemas import rank_read
-from app.modules.rating import service as rating
 from app.modules.tasks import files, reveal, service
 from app.modules.tasks.models import FILE_IMAGE, Task
 from app.modules.tasks.schemas import (
@@ -191,8 +190,6 @@ def check_task(
         first_solve = progress.record_attempt(
             db, user.id, task.id, service.answer_text(result, submission.answer), result["is_correct"]
         )
-        if first_solve:
-            rating.add_point(r, user.id)
         solved, wrong = reveal.user_state(db, user.id, task.id)
         attempt = db.scalar(
             select(Attempt).where(Attempt.user_id == user.id, Attempt.task_id == task.id).order_by(Attempt.id.desc())

@@ -11,7 +11,7 @@ def set_nick(client, headers, value):
     return client.patch("/auth/me", json={"nickname": value}, headers=headers)
 
 
-def test_nickname_replaces_name_everywhere(client, login):
+def test_nickname_replaces_name_everywhere(client, login, ranked):
     me = login(111, "Вася")
     assert client.get("/auth/me", headers=me).json()["display_name"] == "Вася"
 
@@ -20,7 +20,7 @@ def test_nickname_replaces_name_everywhere(client, login):
     assert response.json()["nickname"] == "Котик_42" and response.json()["display_name"] == "Котик_42"
     assert client.get("/auth/me", headers=me).json()["first_name"] == "Вася"  # имя из Telegram себе видно
 
-    client.post(f"/tasks/{TASK_17}/check", json={"answer": "2 20"}, headers=me)
+    ranked(client.get("/auth/me", headers=me).json()["id"])
     row = client.get("/rating?period=all").json()["top"][0]
     assert row["name"] == "Котик_42" and row["has_nickname"] is True
     assert "Вася" not in client.get("/rating?period=all").text  # имя из Telegram в рейтинге не светится

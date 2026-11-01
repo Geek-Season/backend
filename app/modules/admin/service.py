@@ -22,7 +22,6 @@ from app.modules.progress.models import Attempt
 from app.modules.pts import ranks
 from app.modules.pts import service as pts
 from app.modules.pts.models import PtsChange, UserNumberRating
-from app.modules.rating import service as rating
 
 FILTERS = ("all", "admins", "blocked", "no_rank")
 SORTS = ("new", "recent", "pts", "solved", "name")
@@ -273,7 +272,7 @@ def set_role(db: Session, admin: User, user: User, role: str) -> None:
 
 
 def set_blocked(db: Session, admin: User, user: User, blocked: bool) -> bool:
-    """True — что-то изменилось (рейтинг нужно пересобрать)."""
+    """True — что-то изменилось. Заблокированного нет в рейтинге (рейтинг их отфильтровывает)."""
     if blocked == user.is_blocked:
         return False
     if blocked and user.id == admin.id:
@@ -336,6 +335,5 @@ def reset_stats(db: Session, r: Redis, admin: User, user: User) -> ResetSummary:
     r.delete(f"exam:active:{user.id}")
 
     pts.recompute_all(db)  # сам сбросит PTS ученика: событие stats.reset уже в журнале
-    rating.rebuild(r, db)
     db.refresh(user)
     return ResetSummary(attempts, exams)

@@ -8,6 +8,7 @@ from app.modules.auth.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.pts import ranks, service
 from app.modules.pts.schemas import MyRank, rank_read
+from app.modules.rating.service import immortal_places
 
 router = APIRouter(prefix="/me", tags=["Прогресс"])
 
@@ -29,4 +30,5 @@ def my_rank(user: User = Depends(get_current_user), db: Session = Depends(get_db
         "rank_min_primary": rank.min_primary if rank else None,
         "next_rank": rank_read(up),
         "next_min_primary": up.min_primary if up else None,
+        "immortal_place": immortal_places(db).get(user.id) if rank and rank.key == "immortal" else None,
     }
