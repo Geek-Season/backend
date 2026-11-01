@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.modules.auth.deps import get_optional_user
 from app.modules.auth.models import User
+from app.modules.progress.schemas import Calendar
 from app.modules.pts.schemas import RankRead
 from app.modules.rating import service
 
@@ -53,6 +55,39 @@ class Rating(BaseModel):
     counts: dict[str, int] = Field(description="{ранг: сколько учеников} — для кнопок фильтра")
     top: list[RatingRow]
     me: MyPlace | None
+
+
+class AchievementBadge(BaseModel):
+    code: str
+    icon: str
+    title: str
+
+
+class StudentCard(BaseModel):
+    """Публичная карточка ученика: её видит любой посетитель рейтинга. Ни PTS, ни прогноза балла,
+    ни пробников, ни @username — только то, что ученик и так показывает в таблице, плюс старание."""
+
+    user_id: int
+    name: str
+    avatar_url: str | None
+    rank: RankRead | None = Field(description="null — ещё не было входного пробника")
+    immortal_place: int | None
+    place: int | None = Field(description="Место в таблице «Всё время»; null — не в таблице")
+    since: datetime = Field(description="«Занимается с …»")
+    solved: int = Field(description="Сколько разных задач решено")
+    streak: int = Field(description="Дней подряд с ответами")
+    achievements: list[AchievementBadge] = Field(description="Полученные достижения")
+    achievements_total: int
+    calendar: Calendar
+
+
+@router.get("/users/{user_id}", response_model=StudentCard)
+def student_card(user_id: int, db: Session = Depends(get_db)):
+    """Карточка ученика по клику на строку рейтинга (и «Как меня видят» в профиле). Открыта всем."""
+    user = db.get(User, user_id)
+    if user is None or user.blocked_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ученик не найден")
+    return service.card(db, user)
 
 
 @router.get("", response_model=Rating)

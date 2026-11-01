@@ -16,6 +16,7 @@ from app.modules.progress.models import Attempt
 from app.modules.tasks.models import ExamNumber, Task
 
 ACTIVITY_DAYS = 14
+CALENDAR_DAYS = 365  # календарь активности в профиле и карточке — за последний год
 RECENT_LIMIT = 10
 
 
@@ -168,9 +169,57 @@ def _streak(active_days: set[date], today: date) -> int:
     return streak
 
 
+def _today() -> date:
+    return datetime.now(ZoneInfo(settings.timezone)).date()
+
+
+def _per_day(db: Session, user_id: int, since: date | None = None) -> dict[date, tuple[int, int]]:
+    """{день: (ответов, верных)} в часовом поясе settings.timezone. Ответы пробника — тоже здесь:
+    при завершении пробника каждый ответ записывается попыткой."""
+    local_day = func.date(func.timezone(settings.timezone, Attempt.created_at))
+    query = (
+        select(local_day.label("day"), func.count(Attempt.id), func.sum(case((Attempt.is_correct, 1), else_=0)))
+        .where(Attempt.user_id == user_id)
+        .group_by("day")
+    )
+    if since is not None:
+        query = query.having(local_day >= since)
+    return {day: (count, int(correct or 0)) for day, count, correct in db.execute(query).all()}
+
+
+def _best_streak(days: set[date]) -> int:
+    best = run = 0
+    previous = None
+    for day in sorted(days):
+        run = run + 1 if previous is not None and day - previous == timedelta(days=1) else 1
+        best = max(best, run)
+        previous = day
+    return best
+
+
+def calendar(db: Session, user_id: int) -> dict:
+    """Календарь активности за последний год (как в LeetCode/GitHub): только дни с ответами."""
+    today = _today()
+    start = today - timedelta(days=CALENDAR_DAYS - 1)
+    per_day = _per_day(db, user_id, since=start)
+    active = {d for d, (count, _) in per_day.items() if count}
+    return {
+        "start": start,
+        "end": today,
+        "days": [{"date": d, "attempts": c, "correct": ok} for d, (c, ok) in sorted(per_day.items()) if c],
+        "total": sum(c for c, _ in per_day.values()),
+        "active_days": len(active),
+        "best_streak": _best_streak(active),
+        "streak": _streak(active, today),
+    }
+
+
+def solved_count(db: Session, user_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(_solved_task_ids(user_id).subquery()))
+
+
 def user_stats(db: Session, user_id: int) -> dict:
-    tz = settings.timezone
-    today = datetime.now(ZoneInfo(tz)).date()
+    today = _today()
 
     # --- итоги ---
     total_attempts, correct_attempts = db.execute(
@@ -186,18 +235,7 @@ def user_stats(db: Session, user_id: int) -> dict:
     solved_tasks = db.scalar(select(func.count()).select_from(_solved_task_ids(user_id).subquery()))
     total_tasks = db.scalar(select(func.count(Task.id)).where(Task.is_archived.is_(False)))
 
-    # --- по дням (в часовом поясе settings.timezone) ---
-    local_day = func.date(func.timezone(tz, Attempt.created_at))
-    day_rows = db.execute(
-        select(
-            local_day.label("day"),
-            func.count(Attempt.id),
-            func.sum(case((Attempt.is_correct, 1), else_=0)),
-        )
-        .where(Attempt.user_id == user_id)
-        .group_by("day")
-    ).all()
-    per_day = {day: (count, correct) for day, count, correct in day_rows}
+    per_day = _per_day(db, user_id)
 
     activity = []
     for offset in range(ACTIVITY_DAYS - 1, -1, -1):
@@ -259,6 +297,7 @@ def user_stats(db: Session, user_id: int) -> dict:
         "streak_days": _streak({d for d, (c, _) in per_day.items() if c}, today),
         "active_days": len(per_day),
         "activity": activity,
+        "calendar": calendar(db, user_id),
         "by_number": by_number,
         "weak_numbers": weak_numbers(db, user_id),
         "recent": recent,

@@ -181,3 +181,67 @@ def test_weak_sorted_worst_first(client, login):
     solve(client, me, TASK_16, "2")    # 16: точность 0.33
     solve(client, me, TASK_17, "0 0")  # 17: точность 0
     assert list(weak(client, me)) == ["17", "16"]
+
+
+# ---------- Карточка ученика ----------
+
+def test_student_card_is_public_and_private_enough(client, login, ranked, db):
+    from app.modules.auth.models import User
+
+    vasya, petya = login(111, "Вася"), login(222, "Петя")
+    user = db.scalar(select(User).where(User.telegram_id == 111))
+    user.username, user.last_name, user.nickname = "vasya_secret", "Пупкин", "Котик"
+    db.commit()
+    ranked(user.id, "immortal", 2000)
+    ranked(uid(client, petya), "hero", 1100)
+    solve(client, vasya, TASK_17, "2 20")
+    solve(client, vasya, TASK_16, "1")
+    from app.modules.achievements import service as achievements
+
+    achievements.seed_catalog(db)
+    achievements.check_and_grant(db, user.id)  # вживую это делает воркер по событию
+
+    response = client.get(f"/rating/users/{user.id}")  # гостю тоже
+    assert response.status_code == 200
+    card = response.json()
+    assert card["name"] == "Котик" and card["rank"]["key"] == "immortal" and card["immortal_place"] == 1
+    assert card["place"] == 1 and card["solved"] == 1 and card["streak"] == 1
+    codes = [a["code"] for a in card["achievements"]]
+    assert "first_solve" in codes and "rank_immortal" in codes and card["achievements_total"] >= 14
+    cal = card["calendar"]
+    assert cal["total"] == 2 and cal["active_days"] == 1 and cal["best_streak"] == 1
+    assert cal["days"] == [{"date": cal["end"], "attempts": 2, "correct": 1}]
+    for secret in ("vasya_secret", "Пупкин", "Вася", "telegram", '"pts"', "forecast", "primary"):
+        assert secret not in response.text, secret
+
+    assert client.get(f"/rating/users/{uid(client, petya)}").json()["place"] == 2
+    assert client.get("/rating/users/9999").status_code == 404
+
+
+def test_card_without_rank_and_blocked(client, login, db):
+    from datetime import UTC, datetime
+
+    from app.modules.auth.models import User
+
+    me = login()
+    card = client.get(f"/rating/users/{uid(client, me)}").json()
+    assert card["rank"] is None and card["place"] is None and card["calendar"]["days"] == []
+    db.get(User, uid(client, me)).blocked_at = datetime.now(UTC)
+    db.commit()
+    assert client.get(f"/rating/users/{db.scalar(select(User.id).where(User.telegram_id == 111))}").status_code == 404
+
+
+def test_best_streak():
+    from datetime import date
+
+    from app.modules.progress.service import _best_streak
+
+    days = {date(2026, 10, d) for d in (1, 2, 3, 5, 6, 10, 11, 12, 13)}
+    assert _best_streak(days) == 4 and _best_streak(set()) == 0
+
+
+def test_stats_have_calendar(client, login):
+    me = login()
+    solve(client, me, TASK_17, "2 20")
+    cal = client.get("/me/stats", headers=me).json()["calendar"]
+    assert cal["total"] == 1 and cal["streak"] == 1 and len(cal["days"]) == 1
