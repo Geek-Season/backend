@@ -98,6 +98,26 @@ def test_update_rewrites_existing(admin_client, data_dir, upload_dir):
     assert len(fresh["images"]) == 1  # старая картинка удалена, новая загружена
 
 
+def test_created_from_old_to_new(admin_client, client, tmp_path, upload_dir):
+    # kompege отдаёт номер от новых задач к старым — на сайте «сначала новые» сверху должна быть самая новая.
+    (tmp_path / "raw").mkdir()
+    items = [{"taskId": tid, "number": 2, "comment": "", "key": "1", "video": "", "text": f"<p>Задача {tid}</p>"}
+             for tid in (3000, 2000, 1000)]
+    (tmp_path / "raw" / "2.json").write_text(json.dumps(items), encoding="utf-8")
+
+    importer = Importer("", "", tmp_path, dry_run=False, client=admin_client)
+    importer.run([2], None)
+    assert [row.split(":")[1] for row in importer.report["создано"]] == ["1000", "2000", "3000"]
+    page = client.get("/numbers/2/tasks", params={"sort": "new"}).json()
+    ours = [t["statement"] for t in page["items"] if t["statement"].startswith("Задача ")]
+    assert ours == ["Задача 3000", "Задача 2000", "Задача 1000"]
+
+    # --limit берёт самые новые задачи, но создаёт их тоже от старых к новым.
+    importer = Importer("", "", tmp_path, dry_run=True, client=admin_client)
+    importer.run([2], 2)
+    assert [row.split(":")[1] for row in importer.report["уже есть"]] == ["2000", "3000"]
+
+
 def test_warnings_reported_with_our_task_id(admin_client, tmp_path, upload_dir):
     (tmp_path / "raw").mkdir()
     item = {"taskId": 916, "number": 16, "comment": "", "key": "5", "video": "",

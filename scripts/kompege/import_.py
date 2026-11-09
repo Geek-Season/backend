@@ -203,6 +203,9 @@ class Importer:
             if not raw.exists():
                 continue
             items = [i for i in json.loads(raw.read_text(encoding="utf-8")) if not i.get("hide")][:limit]
+            # kompege отдаёт задачи от новых к старым, а сайт показывает «сначала новые» по created_at.
+            # Создаём от старых к новым (по возрастанию taskId), чтобы свежие задачи оказались сверху.
+            items.sort(key=lambda i: int(i["taskId"]))
             print(f"Номер {number}: {len(items)} задач")
             for item in items:
                 try:
@@ -225,7 +228,7 @@ def main() -> None:
     parser.add_argument("--token", default=os.environ.get("GEEK_TOKEN"), help="JWT админа (или GEEK_TOKEN)")
     parser.add_argument("--in", dest="data_dir", type=Path, default=Path("data/kompege"))
     parser.add_argument("--number", type=int, action="append", help="только этот номер (можно несколько раз)")
-    parser.add_argument("--limit", type=int, help="не больше стольких задач каждого номера")
+    parser.add_argument("--limit", type=int, help="не больше стольких задач каждого номера (самых новых)")
     parser.add_argument("--dry-run", action="store_true", help="ничего не менять, только показать")
     parser.add_argument("--update", action="store_true",
                         help="перезаписать уже импортированные задачи из выгрузки (ручные правки в админке пропадут)")
