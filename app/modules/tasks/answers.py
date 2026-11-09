@@ -12,6 +12,10 @@
 
 from decimal import Decimal, InvalidOperation
 
+# Самый длинный ответ: таблица номера 25 (2 × 10–12 чисел) в одну строку — до ~200 символов.
+# Общий лимит для правильного ответа задачи и ответа ученика (в базе — String(MAX_ANSWER_LENGTH)).
+MAX_ANSWER_LENGTH = 255
+
 
 def _as_number(part: str) -> Decimal | None:
     try:

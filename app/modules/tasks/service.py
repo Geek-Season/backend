@@ -13,7 +13,7 @@ from app.modules.auth.models import User
 from app.modules.progress import service as progress
 from app.modules.progress.models import Attempt
 from app.modules.pts import service as pts
-from app.modules.tasks.answers import answers_match
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH, answers_match
 from app.modules.tasks.models import ExamNumber, Task, TaskPart
 from app.modules.tasks.schemas import PartIn, Sort, Source, TaskCreate, TaskUpdate
 
@@ -39,7 +39,7 @@ class WrongAnswerFormat(Exception):
 
 def summary(parts) -> str:
     """Сводка ответов частей для колонки tasks.correct_answer: «19: 29; 20: 28 48; 21: 44»."""
-    return "; ".join(f"{p.number}: {p.correct_answer}" for p in parts)[:100]
+    return "; ".join(f"{p.number}: {p.correct_answer}" for p in parts)[:MAX_ANSWER_LENGTH]
 
 
 def _check_shape(code: str, correct_answer: str | None, parts: list[PartIn] | None) -> None:
@@ -286,7 +286,7 @@ def answer_text(result: dict, answer: str | None) -> str:
     """Что сохранить в статистику как ответ ученика."""
     if not result["parts"]:
         return answer
-    return "; ".join(f"{p['number']}: {p['answer'] or '—'}" for p in result["parts"])[:100]
+    return "; ".join(f"{p['number']}: {p['answer'] or '—'}" for p in result["parts"])[:MAX_ANSWER_LENGTH]
 
 
 # ---------- Ответ вошедшего ученика: попытка + PTS + событие ----------

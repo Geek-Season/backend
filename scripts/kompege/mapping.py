@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 from scripts.kompege.convert import Image, html_to_markdown
 
 SITE = "https://kompege.ru"
@@ -15,7 +16,7 @@ SOURCE_PREFIX = "КЕГЭ (kompege.ru)"
 # Номера, которые у kompege лежат отдельными списками. 20 и 21 — внутри задач 19.
 NUMBERS = [n for n in range(1, 28) if n not in (20, 21)]
 
-MAX_ANSWER = 100
+MAX_ANSWER = MAX_ANSWER_LENGTH  # тот же лимит, что у API
 MAX_LABEL = 100
 MAX_FILES_PER_KIND = 10
 ATTACHMENT_EXT = {".txt", ".csv", ".xlsx", ".xls", ".ods", ".docx", ".doc", ".odt", ".pdf", ".zip"}

@@ -109,8 +109,9 @@ def test_prepare_task_19_splits_question():
 
 
 def test_prepare_skips_long_answer():
-    p = prepare({"taskId": 2, "number": 26, "text": "<p>x</p>", "key": "1 " * 60})
-    assert p.skip and "100" in p.skip
+    assert prepare({"taskId": 2, "number": 25, "text": "<p>x</p>", "key": "12345678 9\n" * 20}).skip is None  # ~200
+    p = prepare({"taskId": 2, "number": 26, "text": "<p>x</p>", "key": "1 " * 130})
+    assert p.skip and "255" in p.skip
 
 
 def test_author_from_statement_goes_to_label():

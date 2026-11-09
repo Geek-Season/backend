@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 from app.modules.auth import models as _auth_models  # noqa: F401
 from app.modules.auth.models import User
 from app.modules.tasks.models import Task
@@ -82,7 +83,7 @@ class HomeworkAnswer(Base):
         ForeignKey("homework_assignments.id", ondelete="CASCADE"), primary_key=True
     )
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="RESTRICT"), primary_key=True)
-    answer: Mapped[str] = mapped_column(String(100))
+    answer: Mapped[str] = mapped_column(String(MAX_ANSWER_LENGTH))
     is_correct: Mapped[bool] = mapped_column(Boolean)
     # Только у 19–21: [{"number": "19", "answer": "29", "is_correct": true}, …]
     parts: Mapped[list | None] = mapped_column(JSONB)

@@ -14,6 +14,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Te
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 
 
 class ExamNumber(Base):
@@ -41,7 +42,7 @@ class Task(Base):
 
     statement: Mapped[str] = mapped_column(Text)
     image_url: Mapped[str | None] = mapped_column(String(500))
-    correct_answer: Mapped[str] = mapped_column(String(100))
+    correct_answer: Mapped[str] = mapped_column(String(MAX_ANSWER_LENGTH))
     explanation: Mapped[str] = mapped_column(Text, default="")
 
     # Откуда задача: demo (демоверсия), official (реальный экзамен),
@@ -119,7 +120,7 @@ class TaskPart(Base):
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     number: Mapped[str] = mapped_column(String(10))  # номер задания ЕГЭ: "19", "20", "21"
     question: Mapped[str] = mapped_column(Text)
-    correct_answer: Mapped[str] = mapped_column(String(100))
+    correct_answer: Mapped[str] = mapped_column(String(MAX_ANSWER_LENGTH))
     explanation: Mapped[str] = mapped_column(Text, default="")
 
     task: Mapped[Task] = relationship(back_populates="parts")

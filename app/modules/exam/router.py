@@ -22,6 +22,7 @@ from app.modules.auth.models import User
 from app.modules.exam import service
 from app.modules.exam.models import ExamSession
 from app.modules.pts.schemas import RankRead
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 from app.modules.tasks.schemas import TaskFileRead
 
 router = APIRouter(prefix="/exam", tags=["Пробник"])
@@ -83,7 +84,7 @@ class ExamHistoryItem(BaseModel):
 class ExamAnswerIn(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    answer: str = Field(max_length=100, description="Пустая строка — стереть ответ", examples=["22"])
+    answer: str = Field(max_length=MAX_ANSWER_LENGTH, description="Пустая строка — стереть ответ", examples=["22"])
 
 
 # ---------- Вспомогательное ----------

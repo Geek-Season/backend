@@ -31,7 +31,7 @@ from app.modules.auth.models import User
 from app.modules.exam.models import ExamAnswer, ExamSession
 from app.modules.exam.scale import FULL_PRIMARY_MAX, MIN_PASSING, MIN_UNIVERSITY, to_test_score
 from app.modules.progress import service as progress
-from app.modules.tasks.answers import answers_match
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH, answers_match
 from app.modules.tasks.models import ExamNumber, Task, TaskPart
 
 TWO_POINT_NUMBERS = {"26", "27"}
@@ -213,7 +213,7 @@ def finish(db: Session, r: Redis, session: ExamSession) -> ExamSession:
         if items[0].part is None:
             text = items[0].answer
         else:
-            text = "; ".join(f"{i.part.number}: {i.answer or '—'}" for i in items)[:100]
+            text = "; ".join(f"{i.part.number}: {i.answer or '—'}" for i in items)[:MAX_ANSWER_LENGTH]
         progress.record_attempt(db, session.user_id, task_id, text, all(i.is_correct for i in items), commit=False)
 
     session.primary_score = score
