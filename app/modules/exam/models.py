@@ -14,6 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.modules.auth import models as _auth_models  # noqa: F401
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 from app.modules.tasks.models import Task, TaskPart
 
 
@@ -48,7 +49,7 @@ class ExamAnswer(Base):
     part_id: Mapped[int | None] = mapped_column(ForeignKey("task_parts.id"))
     points: Mapped[int] = mapped_column(Integer)  # сколько первичных баллов стоит задача
 
-    answer: Mapped[str | None] = mapped_column(String(100))
+    answer: Mapped[str | None] = mapped_column(String(MAX_ANSWER_LENGTH))
     is_correct: Mapped[bool | None] = mapped_column(Boolean)  # считается при завершении
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

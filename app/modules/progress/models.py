@@ -12,6 +12,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 
 # Таблицы, на которые ссылаются внешние ключи, должны быть известны SQLAlchemy —
 # импортируем их явно, чтобы модель работала и в отдельных скриптах.
@@ -29,7 +30,7 @@ class Attempt(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"))
 
-    answer: Mapped[str] = mapped_column(String(100))
+    answer: Mapped[str] = mapped_column(String(MAX_ANSWER_LENGTH))
     is_correct: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True

@@ -152,7 +152,7 @@ def test_validation_and_auth(client, login):
     me = login()
     exam = start(client, me).json()
     assert client.put(f"/exam/{exam['id']}/answers/999", json={"answer": "1"}, headers=me).status_code == 404
-    assert client.put(f"/exam/{exam['id']}/answers/1", json={"answer": "1" * 101}, headers=me).status_code == 422
+    assert client.put(f"/exam/{exam['id']}/answers/1", json={"answer": "1" * 256}, headers=me).status_code == 422
     assert client.put(f"/exam/{exam['id']}/answers/1", json={"answer": "1", "is_correct": True}, headers=me).status_code == 422
 
 

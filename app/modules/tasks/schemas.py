@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.pts.schemas import RankRead
+from app.modules.tasks.answers import MAX_ANSWER_LENGTH
 
 # demo — демоверсия, official — реальный экзамен, approbation — апробация, author — авторская.
 Source = Literal["demo", "official", "approbation", "author"]
@@ -52,7 +53,7 @@ class PartIn(BaseModel):
 
     number: str = Field(examples=["19"])
     question: str = Field(min_length=1)
-    correct_answer: str = Field(min_length=1, max_length=100, examples=["29"])
+    correct_answer: str = Field(min_length=1, max_length=MAX_ANSWER_LENGTH, examples=["29"])
     explanation: str = ""
 
 
@@ -134,7 +135,7 @@ class TaskCreate(BaseModel):
     statement: str = Field(min_length=1)
     image_url: str | None = Field(default=None, max_length=500)
     correct_answer: str | None = Field(
-        default=None, min_length=1, max_length=100, examples=["42"],
+        default=None, min_length=1, max_length=MAX_ANSWER_LENGTH, examples=["42"],
         description="Обязателен для всех номеров, кроме «19-21»: там ответы — в parts",
     )
     explanation: str = ""
@@ -158,7 +159,7 @@ class TaskUpdate(BaseModel):
     exam_number: str | None = None
     statement: str | None = Field(default=None, min_length=1)
     image_url: str | None = Field(default=None, max_length=500)
-    correct_answer: str | None = Field(default=None, min_length=1, max_length=100)
+    correct_answer: str | None = Field(default=None, min_length=1, max_length=MAX_ANSWER_LENGTH)
     explanation: str | None = None
     source: Source | None = None
     source_label: str | None = Field(default=None, max_length=100)
@@ -186,7 +187,7 @@ class AnswerSubmission(BaseModel):
     answer: str | None = Field(
         default=None,
         min_length=1,
-        max_length=100,
+        max_length=MAX_ANSWER_LENGTH,
         description="Ответ как в бланке ЕГЭ: число, слово или несколько чисел через пробел",
         examples=["4"],
     )
@@ -200,8 +201,8 @@ class AnswerSubmission(BaseModel):
             raise ValueError("Пришлите либо answer, либо answers")
         if self.answers is not None:
             self.answers = {k.strip(): v.strip() for k, v in self.answers.items()}
-            if any(len(v) > 100 for v in self.answers.values()):
-                raise ValueError("Ответ длиннее 100 символов")
+            if any(len(v) > MAX_ANSWER_LENGTH for v in self.answers.values()):
+                raise ValueError(f"Ответ длиннее {MAX_ANSWER_LENGTH} символов")
         return self
 
 
