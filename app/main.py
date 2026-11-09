@@ -20,7 +20,7 @@ from app.modules.tasks.router import files_router, numbers_router, tasks_router
 app = FastAPI(
     title="Geek Season",
     description="Подготовка к ЕГЭ по информатике: банк номеров, прототипы и проверка ответов.",
-    version="0.12.0",
+    version="0.13.0",
 )
 
 # Сайт на другом адресе (например, GitHub Pages), API — на сервере: браузеру нужно
