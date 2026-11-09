@@ -117,6 +117,20 @@ class TaskPage(BaseModel):
     items: list[TaskRead]
 
 
+class ReorderNumber(BaseModel):
+    number: str = Field(description="Код номера ЕГЭ, например «1» или «19-21»")
+    total: int = Field(description="Сколько в номере задач kompege (включая архивные)")
+    moved: int = Field(description="Сколько из них сменят (или сменили) место в списке")
+
+
+class ReorderResult(BaseModel):
+    """Итог перестановки порядка задач kompege."""
+
+    dry_run: bool = Field(description="true — только посчитано, в базе ничего не изменено")
+    moved: int = Field(description="Сколько задач сменят (или сменили) место всего")
+    numbers: list[ReorderNumber]
+
+
 class TaskAdminRead(TaskRead):
     """Задача для автора: с ответом и разбором."""
 

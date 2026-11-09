@@ -89,6 +89,10 @@ def describe(action: str, details: dict, female: bool = False) -> str:
             return verb("заблокировал")
         case "user.unblock":
             return verb("разблокировал")
+        case "tasks.reorder":
+            numbers = ", ".join(f"№ {code}: {moved}" for code, moved in (details.get("numbers") or {}).items())
+            return (f"{verb('переставил')} задачи {details.get('source', '')} по порядку банка: "
+                    f"сменили место {details.get('moved', 0)}" + (f" ({numbers})" if numbers else ""))
         case "site.exam_date":
             after = (details.get("after") or {}).get("exam_date")
             return (f"{verb('изменил')} дату ЕГЭ: {_date(before.get('exam_date'))} → {_date(after)}" if after

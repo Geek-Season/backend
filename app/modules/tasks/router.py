@@ -10,6 +10,7 @@
 Ответ и разбор (после 3 ошибок):      GET  /tasks/{id}/solution
 Управление банком (только админ):     POST/PATCH/DELETE /tasks, GET /tasks/{id}/admin
 Картинки и файлы к задаче (админ):    POST /tasks/{id}/files, DELETE /tasks/{id}/files/{file_id}
+Порядок задач kompege (админ):        POST /tasks/reorder-kompege?dry_run=true|false
 Скачать картинку или файл:            GET  /files/{имя}
 """
 
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.redis import get_redis
+from app.modules.admin import service as admin_service
 from app.modules.auth.deps import get_optional_user, require_admin
 from app.modules.auth.models import ROLE_ADMIN, User
 from app.modules.progress import service as progress
@@ -33,6 +35,7 @@ from app.modules.tasks.schemas import (
     AnswerSubmission,
     ExamNumberRead,
     ProgressFilter,
+    ReorderResult,
     Sort,
     Source,
     TaskAdminRead,
@@ -43,6 +46,9 @@ from app.modules.tasks.schemas import (
     TaskSolution,
     TaskUpdate,
 )
+
+# Задачи из банка kompege.ru: external_id = «kompege:<taskId>» (scripts/kompege/import_.py).
+KOMPEGE_PREFIX = "kompege:"
 
 numbers_router = APIRouter(prefix="/numbers", tags=["Номера ЕГЭ"])
 tasks_router = APIRouter(prefix="/tasks", tags=["Задачи"])
@@ -234,6 +240,34 @@ def get_solution(
             f"Разбор откроется после ещё {left} неверн{'ого ответа' if left == 1 else 'ых ответов'}",
         )
     return service.solution(task)
+
+
+@tasks_router.post("/reorder-kompege", response_model=ReorderResult)
+def reorder_kompege(
+    dry_run: bool = Query(True, description="true — только показать, сколько задач сменит место; false — поменять"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Порядок задач kompege на сайте: «сначала новые» — сверху самая новая задача kompege.
+
+    Внутри каждого номера переставляет между задачами kompege их отметки created_at по возрастанию
+    taskId kompege. Ручные задачи, id, решения и PTS не меняются. Повторный вызов ничего не меняет.
+    Без dry_run=false в базе ничего не меняется. Настоящий запуск пишется в журнал админки.
+    """
+    try:
+        numbers = service.reorder_imported(db, KOMPEGE_PREFIX)
+    except service.SameCreatedAt as error:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from None
+    moved = sum(n["moved"] for n in numbers)
+    if dry_run:
+        db.rollback()
+    else:
+        admin_service.log(db, admin, None, "tasks.reorder", {
+            "source": "kompege", "moved": moved, "numbers": {n["number"]: n["moved"] for n in numbers if n["moved"]},
+        })
+        db.commit()
+    return {"dry_run": dry_run, "moved": moved, "numbers": numbers}
 
 
 @tasks_router.get("/by-external/{external_id}", response_model=TaskAdminRead)
