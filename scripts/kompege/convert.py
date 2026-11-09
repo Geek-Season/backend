@@ -102,6 +102,9 @@ class _Converter(HTMLParser):
         self.math_start = 0  # с какого куска out.parts началась текущая формула
         self.pre = 0
         self.link: list[str | None] = []
+        # Готовая формула из редактора (Quill/KaTeX/MathML): пока открыт её корневой тег, текст
+        # внутри не выводим — там отрисовка, а TeX берём из data-value или <annotation>.
+        self.formula: dict | None = None  # {"tag", "depth", "tex", "in_annotation"}
 
     # ---------- вывод ----------
 
@@ -127,6 +130,14 @@ class _Converter(HTMLParser):
     # ---------- текст ----------
 
     def handle_data(self, data: str) -> None:
+        if self.formula is not None:
+            if self.formula["in_annotation"]:
+                self.formula["annotation"] += data
+            else:
+                self.formula["text"] += data
+                self.formula["events"].append(data)
+            return
+        data = data.replace("\ufeff", "")  # невидимые BOM, которые Quill ставит вокруг формул
         if self.pre:
             self.emit(data)
             return
@@ -181,8 +192,62 @@ class _Converter(HTMLParser):
 
     # ---------- теги ----------
 
+    # ---------- готовые формулы (Quill: <span class="ql-formula" data-value="TeX">, KaTeX, MathML) ----------
+
+    def formula_start(self, tag: str, attrs: dict) -> bool:
+        """Тег открывает готовую формулу? Тогда начинаем её захват и возвращаем True."""
+        classes = (attrs.get("class") or "").split()
+        if tag == "span" and "ql-formula" in classes:
+            tex = attrs.get("data-value")
+        elif (tag == "span" and "katex" in classes) or tag == "math":
+            tex = None  # возьмём из <annotation encoding="application/x-tex">
+        else:
+            return False
+        self.formula = {"tag": tag, "depth": 1, "tex": tex, "in_annotation": False, "annotation": "", "text": "",
+                        # Отрисована ли формула внутри. Quill оставляет пустые <span class="ql-formula"
+                        # data-value="n = 1"><br></span> рядом с обычным \(n=1\) — их data-value дублирует текст.
+                        "rendered": tag == "math" or "katex" in classes,
+                        "events": []}  # текст и <br> по порядку — чтобы вывести остаток как есть
+        return True
+
+    def formula_tag(self, tag: str, attrs: dict | None) -> None:
+        """Тег внутри захватываемой формулы: только следим за вложенностью и <annotation>."""
+        f = self.formula
+        if attrs is not None and (tag == "math" or "katex" in (attrs.get("class") or "").split()):
+            f["rendered"] = True
+        if tag == "annotation":
+            f["in_annotation"] = attrs is not None and "tex" in (attrs.get("encoding") or "")
+            return
+        if tag == f["tag"]:
+            f["depth"] += 1 if attrs is not None else -1
+        if f["depth"] == 0:
+            self.formula = None
+            tex = (f["tex"] if f["tex"] is not None else f["annotation"]).strip()
+            if not f["rendered"]:
+                # Пустой остаток редактора: формулы в нём нет, выводим его содержимое как обычный span.
+                for event in f["events"]:
+                    if event is None:
+                        self.handle_starttag("br", [])
+                    else:
+                        self.handle_data(event)
+            elif tex:
+                self.emit("$" + self.math(tex) + "$")
+            elif f["text"].strip():
+                # Исходного TeX нет (только отрисовка KaTeX, например «S») — оставляем видимый текст, как раньше.
+                self.handle_data(f["text"])
+            else:
+                self.warn("формула без исходного TeX и текста — пропущена, проверить вручную")
+
     def handle_starttag(self, tag: str, attrs) -> None:
         attrs = dict(attrs)
+        if self.formula is not None:
+            if tag == "br":
+                self.formula["events"].append(None)
+            elif tag not in VOID:
+                self.formula_tag(tag, attrs)
+            return
+        if self.formula_start(tag, attrs):
+            return
         if tag == "br":
             self.emit("<br>" if self.out.tag in ("td", "th") else "\n")
         elif tag == "img":
@@ -239,6 +304,12 @@ class _Converter(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         if tag in VOID:
+            return
+        if self.formula is not None:
+            if tag == "annotation":
+                self.formula["in_annotation"] = False
+            else:
+                self.formula_tag(tag, None)
             return
         if tag in HEADINGS:
             self.close_inline(tag)
