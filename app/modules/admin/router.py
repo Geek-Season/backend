@@ -5,7 +5,7 @@ GET   /admin/users/{id}                 — карточка ученика (+ �
 PATCH /admin/users/{id}                 — {nickname, created_at, role, blocked}: меняются присланные поля
 POST  /admin/users/{id}/pts             — {pts: 1500} или {rank: "hero"}
 POST  /admin/users/{id}/recalibrate     — сбросить калибровку: следующий пробник снова входной
-POST  /admin/users/{id}/reset-stats     — удалить всю статистику (ответы, пробники, PTS, достижения)
+POST  /admin/users/{id}/reset-stats     — удалить всю статистику (ответы, пробники, PTS, достижения, ответы в домашках)
 DELETE /admin/users/{id}/avatar         — сбросить аватарку на фото из Telegram
 GET   /admin/actions                    — журнал: ?user_id=&admin_id=&before=<id>&limit=
 """

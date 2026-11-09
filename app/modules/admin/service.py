@@ -18,6 +18,7 @@ from app.modules.admin.models import AdminAction
 from app.modules.auth import avatars, nickname
 from app.modules.auth.models import ROLE_ADMIN, User
 from app.modules.exam.models import ExamSession
+from app.modules.homework import service as homework
 from app.modules.progress.models import Attempt
 from app.modules.pts import ranks
 from app.modules.pts import service as pts
@@ -321,6 +322,8 @@ class ResetSummary:
 def reset_stats(db: Session, r: Redis, admin: User, user: User) -> ResetSummary:
     """Удалить все ответы, пробники, PTS и достижения ученика. Профиль (ник, аватарка, роль) остаётся.
 
+    Ответы в домашках тоже стираются, а «сдано» снимается: домашки можно решить заново.
+
     После — полный пересчёт PTS: рейтинги задач тоже «забывают» ответы ученика.
     """
     solved = db.scalar(select(func.count(distinct(Attempt.task_id)))
@@ -335,6 +338,7 @@ def reset_stats(db: Session, r: Redis, admin: User, user: User) -> ResetSummary:
     db.execute(delete(Attempt).where(Attempt.user_id == user.id))
     db.execute(delete(ExamSession).where(ExamSession.user_id == user.id))
     db.execute(delete(UserAchievement).where(UserAchievement.user_id == user.id))
+    homework.reset_user(db, user.id)
     db.commit()
     r.delete(f"exam:active:{user.id}")
 

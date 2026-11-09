@@ -320,6 +320,30 @@ def test_delete_keeps_attempts(client, admin_client, student, db, new_task):
     assert admin_client.delete(f"/admin/homework/{homework_id}").status_code == 404
 
 
+def test_reset_stats_lets_redo_homework(client, admin_client, login, student, db):
+    """После сброса статистики ответы в домашке стёрты, «сдано» снято — можно решить заново."""
+    me, my_id = student
+    other = login(222, "Петя")
+    petya = me_id(client, other)
+    task_id = make_task(admin_client)
+    homework_id = make_homework(admin_client, [task_id], [my_id, petya])
+    answer(client, me, homework_id, task_id)
+    answer(client, other, homework_id, task_id)
+    client.post(f"/homework/{homework_id}/submit", headers=me)
+
+    assert admin_client.post(f"/admin/users/{my_id}/reset-stats").status_code == 200
+
+    detail = client.get(f"/homework/{homework_id}", headers=me).json()
+    assert detail["submitted_at"] is None and detail["answered"] == 0
+    assert detail["items"][0]["solution"] is None  # разбор снова закрыт до сдачи
+    retry = answer(client, me, homework_id, task_id)
+    assert retry.status_code == 200 and retry.json()["pts_delta"] is not None  # PTS снова засчитываются
+    # Чужие ответы не тронуты.
+    rows = {r["student"]["id"]: r for r in admin_client.get(f"/admin/homework/{homework_id}/results").json()["rows"]}
+    assert rows[petya]["answered"] == 1
+    assert count(db, Attempt, Attempt.user_id == my_id) == 1
+
+
 # ---------- Задачи: архив и удаление ----------
 
 def test_archived_task_stays_in_homework(client, admin_client, student):
