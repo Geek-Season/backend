@@ -3,72 +3,36 @@
     python -m scripts.kompege.reorder --dry-run   # только показать, что поменяется
     python -m scripts.kompege.reorder             # поменять
 
-На сервере: docker compose exec api python -m scripts.kompege.reorder --dry-run
+Если к серверу нет консоли — то же самое делает админский эндпоинт
+POST /tasks/reorder-kompege?dry_run=true|false (его можно вызвать из Swagger, /docs).
 
-Ранние запуски импорта создавали задачи в порядке kompege — от новых к старым, и на сайте
-«сначала новые» наверху оказывались старые. Сайт сортирует по tasks.created_at, поэтому внутри
-каждого номера переставляем между задачами kompege их же отметки created_at: самой старой задаче
-(меньший taskId) — самую раннюю. Задачи, добавленные вручную, не трогаем — их место в списке
-сохраняется. Id задач, решения и PTS не меняются (created_at задачи больше нигде не используется).
-Повторный запуск ничего не меняет. Всё — в одной транзакции.
+Логика — в app.modules.tasks.service.reorder_imported: внутри каждого номера отметки created_at
+задач kompege переставляются по возрастанию taskId; ручные задачи, id, решения и PTS не меняются.
+Скрипт пишет прямо в базу, поэтому в журнал админки он не попадает (эндпоинт — попадает).
 """
 
 import argparse
 import sys
-from collections import defaultdict
-from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
-from app.modules.tasks.models import Task
-
-PREFIX = "kompege:"
-
-
-class SameTimeError(Exception):
-    """У двух задач kompege одного номера одинаковый created_at — перестановка не задаст порядок."""
+from app.modules.tasks.router import KOMPEGE_PREFIX
+from app.modules.tasks.service import SameCreatedAt, reorder_imported
 
 
-@dataclass
-class NumberReport:
-    code: str
-    total: int
-    moved: int
-
-
-def kompege_id(task: Task) -> int:
-    return int(task.external_id.removeprefix(PREFIX))
-
-
-def reorder(db: Session, apply: bool) -> list[NumberReport]:
-    """Переставить created_at задач kompege по возрастанию taskId. Без apply — только посчитать."""
-    tasks = db.scalars(select(Task).where(Task.external_id.like(f"{PREFIX}%"))).all()
-    groups: dict[str, list[Task]] = defaultdict(list)
-    for task in tasks:
-        groups[task.exam_number.code].append(task)
-
-    reports = []
-    for code, group in sorted(groups.items(), key=lambda item: item[1][0].exam_number.position):
-        times = sorted(task.created_at for task in group)
-        same = sorted({t for t, n in zip(times, times[1:]) if t == n})
-        if same:
-            db.rollback()  # предыдущие номера могли уже поменяться в сессии — откатываем всё
-            raise SameTimeError(f"номер {code}: у нескольких задач одинаковое время создания {same[0]} — "
-                                "порядок перестановкой не задать, ничего не изменено")
-        moved = 0
-        for task, time in zip(sorted(group, key=kompege_id), times):
-            if task.created_at != time:
-                moved += 1
-                task.created_at = time
-        reports.append(NumberReport(code, len(group), moved))
-
+def reorder(db: Session, apply: bool) -> list[dict]:
+    """Переставить (apply) или только посчитать. При SameCreatedAt ничего не меняется."""
+    try:
+        numbers = reorder_imported(db, KOMPEGE_PREFIX)
+    except SameCreatedAt:
+        db.rollback()
+        raise
     if apply:
         db.commit()
     else:
         db.rollback()
-    return reports
+    return numbers
 
 
 def main() -> None:
@@ -78,13 +42,13 @@ def main() -> None:
 
     with SessionLocal() as db:
         try:
-            reports = reorder(db, apply=not args.dry_run)
-        except SameTimeError as error:
+            numbers = reorder(db, apply=not args.dry_run)
+        except SameCreatedAt as error:
             sys.exit(f"Ошибка: {error}")
     verb = "сменят место" if args.dry_run else "сменили место"
-    for r in reports:
-        print(f"номер {r.code}: задач kompege {r.total}, {verb} {r.moved}")
-    moved = sum(r.moved for r in reports)
+    for n in numbers:
+        print(f"номер {n['number']}: задач kompege {n['total']}, {verb} {n['moved']}")
+    moved = sum(n["moved"] for n in numbers)
     print(f"Итого {verb}: {moved}" + (" (пробный запуск — ничего не изменено)" if args.dry_run else ""))
 
 

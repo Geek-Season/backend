@@ -152,6 +152,42 @@ def get_task_by_external_id(db: Session, external_id: str) -> Task | None:
     return db.scalar(select(Task).where(Task.external_id == external_id))
 
 
+class SameCreatedAt(Exception):
+    """У двух импортированных задач одного номера одинаковый created_at — перестановкой порядок не задать."""
+
+
+def reorder_imported(db: Session, prefix: str) -> list[dict]:
+    """Порядок импортированных задач на сайте («сначала новые» = created_at по убыванию) — как во внешнем банке.
+
+    Внутри каждого номера переставляет между задачами с external_id «<prefix><число>» их же отметки
+    created_at: задаче с меньшим внешним id — более раннюю. Ручные задачи не трогает — их место сохраняется.
+    Повторный вызов ничего не меняет. Изменения только в сессии: commit или rollback — у вызывающего.
+    Возвращает [{"number": "1", "total": 120, "moved": 118}, …] в порядке номеров.
+    """
+    tasks = db.scalars(
+        select(Task).options(joinedload(Task.exam_number)).where(Task.external_id.startswith(prefix, autoescape=True))
+    ).all()
+    groups: dict[str, list[Task]] = {}
+    for task in sorted(tasks, key=lambda t: t.exam_number.position):
+        groups.setdefault(task.exam_number.code, []).append(task)
+
+    plan, result = [], []
+    for code, group in groups.items():
+        times = sorted(task.created_at for task in group)
+        same = next((a for a, b in zip(times, times[1:]) if a == b), None)
+        if same is not None:
+            raise SameCreatedAt(f"номер {code}: у нескольких задач одинаковое время создания ({same}) — "
+                                "порядок перестановкой не задать, ничего не изменено")
+        by_external = sorted(group, key=lambda t: int(t.external_id.removeprefix(prefix)))
+        moves = [(task, time) for task, time in zip(by_external, times) if task.created_at != time]
+        plan += moves
+        result.append({"number": code, "total": len(group), "moved": len(moves)})
+    # Меняем только после проверки всех номеров: ошибка в одном не оставит полуготовых правок.
+    for task, time in plan:
+        task.created_at = time
+    return result
+
+
 def create_task(db: Session, data: TaskCreate) -> Task:
     number = get_number(db, data.exam_number)
     if number is None:
