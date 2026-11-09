@@ -96,3 +96,22 @@ def test_update_rewrites_existing(admin_client, data_dir, upload_dir):
     fresh = admin_client.get(f"/tasks/{task['id']}/admin").json()
     assert fresh["statement"].startswith("Граф:") and fresh["difficulty"] == 60
     assert len(fresh["images"]) == 1  # старая картинка удалена, новая загружена
+
+
+def test_warnings_reported_with_our_task_id(admin_client, tmp_path, upload_dir):
+    (tmp_path / "raw").mkdir()
+    item = {"taskId": 916, "number": 16, "comment": "", "key": "5", "video": "",
+            "text": '<p>Функция.</p><table><tr><td colspan="2">F</td></tr><tr><td>1</td><td>2</td></tr></table>'}
+    (tmp_path / "raw" / "16.json").write_text(json.dumps([item]), encoding="utf-8")
+
+    first = Importer("", "", tmp_path, dry_run=False, client=admin_client)
+    first.run([16], None)
+    task_id = admin_client.get("/tasks/by-external/kompege:916").json()["id"]
+    expected = [f"kompege:916: номер 16, задача {task_id}: в таблице есть объединённые ячейки (colspan/rowspan) "
+                "— проверить вручную"]
+    assert first.report["проверить вручную"] == expected
+
+    # Повторный пробный запуск снова выдаёт тот же список — с id уже созданной задачи.
+    again = Importer("", "", tmp_path, dry_run=True, client=admin_client)
+    again.run([16], None)
+    assert again.report["проверить вручную"] == expected and len(again.report["уже есть"]) == 1
