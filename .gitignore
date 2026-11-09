@@ -8,3 +8,6 @@
 __pycache__/
 venv/
 uploads/
+
+# Выгрузка задач kompege.ru (scripts/kompege)
+data/
