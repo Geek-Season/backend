@@ -379,17 +379,26 @@ def _save(db: Session, engine: Engine, user: User, touched: list[tuple[int, Resu
         ))
 
 
-def record_answer(db: Session, user: User, task: Task, attempt: Attempt) -> Outcome:
-    """Ответ на странице номера (попытка уже сохранена). Повторная попытка — Outcome(counted=0)."""
+def record_answer(db: Session, user: User, task: Task, attempt: Attempt, commit: bool = True) -> Outcome:
+    """Ответ на задачу (попытка уже сохранена). Повторная попытка — Outcome(counted=0).
+
+    commit=False — только flush: вызывающий сам завершит транзакцию (так ответ в домашке
+    пишет попытку, PTS и свою строку одним коммитом). Блокировка строки ученика
+    держится до этого коммита.
+    """
     engine = _load_engine(db, user)
     score = score_of(attempt, task)
     result = engine.play(user.id, task.id, score)
     if result is None:
-        db.commit()  # снять блокировку
+        if commit:
+            db.commit()  # снять блокировку
         return Outcome()
     rank_up, _ = engine.update_rank(user.id)
     _save(db, engine, user, [(task.id, result, score, attempt.id, None, attempt.created_at)])
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return Outcome(delta=result.delta, counted=1, rank_up=rank_up)
 
 

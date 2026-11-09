@@ -23,6 +23,7 @@ from app.modules.achievements import models as _achievements_models  # noqa: E40
 from app.modules.admin import models as _admin_models  # noqa: E402,F401
 from app.modules.auth import models as _auth_models  # noqa: E402,F401
 from app.modules.exam import models as _exam_models  # noqa: E402,F401
+from app.modules.homework import models as _homework_models  # noqa: E402,F401
 from app.modules.notifications import models as _notifications_models  # noqa: E402,F401
 from app.modules.progress import models as _progress_models  # noqa: E402,F401
 from app.modules.pts import models as _pts_models  # noqa: E402,F401
