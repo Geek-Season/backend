@@ -21,39 +21,51 @@ from pathlib import Path
 
 import httpx2 as httpx  # пакет httpx2 из requirements.txt (форк httpx с тем же API)
 
-from scripts.kompege.mapping import NUMBERS, SITE, image_cache_name, prepare
+from scripts.kompege.mapping import NUMBERS, SITE, attachment_path, image_path, missing_files, prepare
 
 USER_AGENT = "GeekSeasonImport/1.0 (task import with permission of the kompege.ru author)"
 
 
+class DownloadError(Exception):
+    """Адрес так и не скачался: сеть/SSL после всех повторов или ответ 4xx."""
+
+
 class Polite:
-    """HTTP-клиент, который не торопится: пауза перед каждым запросом и повтор при 429/5xx."""
+    """HTTP-клиент, который не торопится: пауза перед каждым запросом и повтор при сбое сети и 429/5xx."""
 
     def __init__(self, delay: float):
         self.delay = delay
         self.client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True)
         self.last = 0.0
 
-    def get(self, url: str) -> httpx.Response:
-        for attempt in range(5):
+    def get(self, url: str, attempts: int = 5) -> httpx.Response:
+        reason = ""
+        for attempt in range(attempts):
             wait = self.last + self.delay - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
             self.last = time.monotonic()
+            last_try = attempt == attempts - 1
             try:
                 response = self.client.get(url)
             except httpx.TransportError as error:
-                print(f"  сеть: {error} — повтор", file=sys.stderr)
-                time.sleep(self.delay * 2 ** (attempt + 1))
+                reason = f"{type(error).__name__}: {error}"
+                print(f"  сеть ({reason}) на {url}" + ("" if last_try else " — повтор"), file=sys.stderr)
+                if not last_try:
+                    time.sleep(self.delay * 2 ** (attempt + 1))
                 continue
             if response.status_code == 429 or response.status_code >= 500:
+                reason = f"ответ {response.status_code}"
                 pause = float(response.headers.get("Retry-After") or self.delay * 2 ** (attempt + 1))
-                print(f"  {response.status_code} на {url} — жду {pause:.0f} с", file=sys.stderr)
-                time.sleep(pause)
+                print(f"  {response.status_code} на {url}" + ("" if last_try else f" — жду {pause:.0f} с"),
+                      file=sys.stderr)
+                if not last_try:
+                    time.sleep(pause)
                 continue
-            response.raise_for_status()
+            if response.status_code >= 400:
+                raise DownloadError(f"ответ {response.status_code}")  # 404 и т. п. — повтор не поможет
             return response
-        raise RuntimeError(f"Не удалось скачать {url}")
+        raise DownloadError(reason or "не удалось скачать")
 
 
 def absolute(url: str) -> str:
@@ -61,10 +73,12 @@ def absolute(url: str) -> str:
 
 
 def download(http: Polite, url: str, path: Path) -> bool:
+    """Скачать url в path, если его там ещё нет. Ошибку (DownloadError) решает вызывающий."""
     if path.exists() and path.stat().st_size > 0:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = http.get(absolute(url)).content
+    # Файлы к задачам — три попытки, а не пять: недоступная картинка с чужого сайта не должна держать выгрузку.
+    data = http.get(absolute(url), attempts=3).content
     tmp = path.with_suffix(path.suffix + ".part")
     tmp.write_bytes(data)
     tmp.replace(path)
@@ -114,17 +128,23 @@ def export_number(http: Polite | None, number: int, out: Path, limit: int | None
         raw.parent.mkdir(parents=True, exist_ok=True)
         raw.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    prepared, downloaded = [], 0
+    prepared, downloaded, failed = [], 0, []
     for item in items:
         p = prepare(item)
         prepared.append(p)
-        if http is None:
-            continue
-        for attachment in p.attachments:
-            downloaded += download(http, attachment["url"], out / "files" / str(item["taskId"]) / attachment["name"])
-        for image in p.images:
-            if image.src:
-                downloaded += download(http, image.src, out / "images" / image_cache_name(image.src))
+        if http is not None:
+            jobs = [(a["url"], attachment_path(out, item["taskId"], a["name"])) for a in p.attachments]
+            jobs += [(i.src, image_path(out, i.src)) for i in p.images if i.src]
+            for url, path in jobs:
+                try:
+                    downloaded += download(http, url, path)
+                except DownloadError as error:
+                    # Одна недоступная картинка (например, с vk.com) не должна ронять всю выгрузку.
+                    failed.append(f"{p.external_id}: {absolute(url)} — {error}")
+        # Задача без своих картинок/файлов в импорт не пойдёт: её надо проверить вручную.
+        missing = missing_files(p, item["taskId"], out)
+        if missing:
+            p.skip = p.skip or "не скачались: " + "; ".join(missing)
 
     (out / "preview").mkdir(parents=True, exist_ok=True)
     rows = [{"external_id": p.external_id, "skip": p.skip, "warnings": p.warnings, "images": len(p.images),
@@ -134,8 +154,12 @@ def export_number(http: Polite | None, number: int, out: Path, limit: int | None
 
     stats = {"всего на сайте": total, "скрыто": hidden, "выгружено": len(items),
              "не пойдут в импорт": sum(1 for p in prepared if p.skip),
-             "с предупреждениями": sum(1 for p in prepared if p.warnings), "скачано файлов": downloaded}
+             "с предупреждениями": sum(1 for p in prepared if p.warnings), "скачано файлов": downloaded,
+             "не скачалось": len(failed)}
     print("  " + ", ".join(f"{k}: {v}" for k, v in stats.items()))
+    for line in failed:
+        print(f"  проверить вручную — {line}")
+    stats["failed"] = failed
     return stats
 
 
@@ -156,8 +180,14 @@ def main() -> None:
     http = None if args.offline else Polite(args.delay)
     if args.offline:
         numbers = [n for n in numbers if (args.out / "raw" / f"{n}.json").exists()]
+    failed = []
     for number in numbers:
-        export_number(http, number, args.out, args.limit)
+        failed += export_number(http, number, args.out, args.limit)["failed"]
+    if failed:
+        # Сводка в конце: за час выгрузки строки по номерам уедут далеко вверх.
+        print(f"\nНе скачалось {len(failed)} — эти задачи не пойдут в импорт, проверить вручную:")
+        for line in failed:
+            print(f"  {line}")
     print(f"Готово: {args.out.resolve()}")
 
 

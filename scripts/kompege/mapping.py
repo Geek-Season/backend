@@ -6,7 +6,7 @@
 
 import re
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from scripts.kompege.convert import Image, html_to_markdown
 
@@ -99,6 +99,28 @@ def image_cache_name(src: str) -> str:
 
     suffix = PurePosixPath(src.split("?")[0]).suffix.lower()[:6] or ".img"
     return hashlib.sha1(src.encode()).hexdigest()[:16] + suffix
+
+
+# Где выгрузка хранит скачанное (data_dir — папка --out у export и --in у import_).
+def image_path(data_dir: Path, src: str) -> Path:
+    return data_dir / "images" / image_cache_name(src)
+
+
+def attachment_path(data_dir: Path, task_id: int, name: str) -> Path:
+    return data_dir / "files" / str(task_id) / name
+
+
+def missing_files(prepared: "Prepared", task_id: int, data_dir: Path) -> list[str]:
+    """Какие картинки-ссылки и файлы задачи не скачаны. Такую задачу не импортируем — проверить вручную."""
+    missing = [f"картинка {image.src}" for image in prepared.images
+               if image.src and not _downloaded(image_path(data_dir, image.src))]
+    missing += [f"файл {a['name']}" for a in prepared.attachments
+                if not _downloaded(attachment_path(data_dir, task_id, a["name"]))]
+    return missing
+
+
+def _downloaded(path: Path) -> bool:
+    return path.exists() and path.stat().st_size > 0
 
 
 def _split_question_19(markdown: str) -> tuple[str, str] | None:
