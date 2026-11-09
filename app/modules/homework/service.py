@@ -10,6 +10,7 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, distinct, func, select
+from sqlalchemy import update as sql_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -185,6 +186,21 @@ def submit(db: Session, user: User, homework_id: int) -> dict:
     assignment.submitted_at = _now()
     db.commit()
     return my_detail(db, user, homework_id)
+
+
+def reset_user(db: Session, user_id: int) -> int:
+    """Сброс статистики ученика: стереть его ответы во всех домашках и снять «сдано».
+
+    Домашки остаются назначенными — их можно решить заново (попыток и PTS после сброса
+    уже нет, и старые ответы иначе нельзя было бы ни увидеть в статистике, ни переписать).
+    Не коммитит: это часть сброса в admin.service. Возвращает, сколько ответов стёрто.
+    """
+    mine = select(HomeworkAssignment.id).where(HomeworkAssignment.user_id == user_id)
+    erased = db.execute(delete(HomeworkAnswer).where(HomeworkAnswer.assignment_id.in_(mine))).rowcount
+    db.execute(
+        sql_update(HomeworkAssignment).where(HomeworkAssignment.user_id == user_id).values(submitted_at=None)
+    )
+    return erased
 
 
 # ---------- Админ ----------
