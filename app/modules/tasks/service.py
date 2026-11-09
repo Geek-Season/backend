@@ -8,6 +8,11 @@
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core import events
+from app.modules.auth.models import User
+from app.modules.progress import service as progress
+from app.modules.progress.models import Attempt
+from app.modules.pts import service as pts
 from app.modules.tasks.answers import answers_match
 from app.modules.tasks.models import ExamNumber, Task, TaskPart
 from app.modules.tasks.schemas import PartIn, Sort, Source, TaskCreate, TaskUpdate
@@ -271,3 +276,31 @@ def answer_text(result: dict, answer: str | None) -> str:
     if not result["parts"]:
         return answer
     return "; ".join(f"{p['number']}: {p['answer'] or '—'}" for p in result["parts"])[:100]
+
+
+# ---------- Ответ вошедшего ученика: попытка + PTS + событие ----------
+
+def record_user_answer(db: Session, user: User, task: Task, result: dict, answer: str | None) -> tuple[bool, "pts.Outcome"]:
+    """Записать проверенный ответ так же, как на странице номера: попытка в статистику и PTS.
+
+    НЕ коммитит: вызывающий завершает транзакцию сам, а после коммита вызывает
+    publish_answered. Так «Задания» и домашки пишут ответ одинаково, а домашка —
+    вместе со своей строкой, одним коммитом.
+    Возвращает (решена ли задача впервые, что изменилось в PTS).
+    """
+    first_solve = progress.record_attempt(
+        db, user.id, task.id, answer_text(result, answer), result["is_correct"], commit=False
+    )
+    attempt = db.scalar(
+        select(Attempt).where(Attempt.user_id == user.id, Attempt.task_id == task.id).order_by(Attempt.id.desc())
+    )
+    outcome = pts.record_answer(db, user, task, attempt, commit=False)
+    return first_solve, outcome
+
+
+def publish_answered(user_id: int, task_id: int, is_correct: bool, first_solve: bool) -> None:
+    """Событие для фонового воркера (достижения, в том числе за ранг). Только ПОСЛЕ коммита:
+    воркер пересчитывает всё из базы и должен увидеть этот ответ. Брокер недоступен — не страшно."""
+    events.publish("task.answered", {
+        "user_id": user_id, "task_id": task_id, "is_correct": is_correct, "first_solve": first_solve,
+    })

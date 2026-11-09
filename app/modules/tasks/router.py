@@ -18,17 +18,13 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from redis import Redis
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core import events
 from app.core.db import get_db
 from app.core.redis import get_redis
 from app.modules.auth.deps import get_optional_user, require_admin
 from app.modules.auth.models import ROLE_ADMIN, User
 from app.modules.progress import service as progress
-from app.modules.progress.models import Attempt
-from app.modules.pts import service as pts
 from app.modules.pts.schemas import rank_read
 from app.modules.tasks import files, reveal, service
 from app.modules.tasks.models import FILE_IMAGE, Task
@@ -187,25 +183,16 @@ def check_task(
         detail = "У этой задачи три части: пришлите answers" if task.parts else "Пришлите answer"
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail) from None
     if user is not None:
-        first_solve = progress.record_attempt(
-            db, user.id, task.id, service.answer_text(result, submission.answer), result["is_correct"]
-        )
+        first_solve, outcome = service.record_user_answer(db, user, task, result, submission.answer)
+        db.commit()
         solved, wrong = reveal.user_state(db, user.id, task.id)
-        attempt = db.scalar(
-            select(Attempt).where(Attempt.user_id == user.id, Attempt.task_id == task.id).order_by(Attempt.id.desc())
-        )
-        outcome = pts.record_answer(db, user, task, attempt)
         pts_info = {
             "pts_delta": round(outcome.delta, 1) if outcome.counted else None,
             "pts_repeat": not outcome.counted,
             "rank_up": rank_read(outcome.rank_up),
         }
-        # Событие для фонового воркера (достижения, в том числе за ранг — поэтому после PTS).
-        # Брокер недоступен — ответ всё равно уходит.
-        events.publish("task.answered", {
-            "user_id": user.id, "task_id": task.id,
-            "is_correct": result["is_correct"], "first_solve": first_solve,
-        })
+        # После PTS — чтобы достижения за ранг видели новый ранг.
+        service.publish_answered(user.id, task.id, result["is_correct"], first_solve)
     else:
         solved, wrong = reveal.guest_record(r, _client(request), task.id, result["is_correct"])
         pts_info = {}
