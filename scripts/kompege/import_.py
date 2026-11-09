@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 import httpx2 as httpx  # пакет httpx2 из requirements.txt (форк httpx с тем же API)
 
-from scripts.kompege.mapping import NUMBERS, Prepared, image_cache_name, prepare
+from scripts.kompege.mapping import NUMBERS, Prepared, attachment_path, image_path, missing_files, prepare
 
 PENDING = re.compile(r"!\[([^\]]*)\]\(pending:(\d+)\)")
 IMAGE_MAGIC = [
@@ -110,13 +110,13 @@ class Importer:
         image = prepared.images[index]
         if image.data is not None:
             return image.data
-        path = self.dir / "images" / image_cache_name(image.src)
+        path = image_path(self.dir, image.src)
         if not path.exists():
             raise ApiError(f"картинка {image.src} не скачана — запустите export ещё раз")
         return path.read_bytes()
 
     def attachment_path(self, item_id: int, name: str) -> Path:
-        path = self.dir / "files" / str(item_id) / name
+        path = attachment_path(self.dir, item_id, name)
         if not path.exists():
             raise ApiError(f"файл {name} не скачан — запустите export ещё раз")
         return path
@@ -143,6 +143,15 @@ class Importer:
     def note(self, bucket: str, prepared: Prepared, message: str = "") -> None:
         self.report[bucket].append(f"{prepared.external_id}" + (f": {message}" if message else ""))
 
+    def manual(self, prepared: Prepared, task_id: int | None) -> None:
+        """Предупреждения конвертера → «проверить вручную» с нашим id задачи (его видно в списке админки).
+
+        Печатается и при повторном запуске, и с --dry-run: список правок всегда можно получить заново.
+        """
+        where = f"задача {task_id}" if task_id else "ещё не создана"
+        for warning in prepared.warnings:
+            self.note("проверить вручную", prepared, f"номер {prepared.payload['exam_number']}, {where}: {warning}")
+
     def complete(self, task: dict, prepared: Prepared) -> bool:
         if any("pending:" in text for text in texts(task)):
             return False
@@ -154,16 +163,21 @@ class Importer:
         if prepared.skip:
             self.note("пропущено", prepared, prepared.skip)
             return
-        for warning in prepared.warnings:
-            self.note("проверить вручную", prepared, warning)
-
+        # Проверяем до POST /tasks: иначе на сайте осталась бы задача без картинки.
+        missing = missing_files(prepared, item["taskId"], self.dir)
+        if missing:
+            self.note("проверить вручную", prepared,
+                      "не импортирована, не скачались: " + "; ".join(missing) + " (повторите export или добавьте вручную)")
+            return
         existing = self.find(prepared.external_id)
         if existing and not self.update and self.complete(existing, prepared):
             self.note("уже есть", prepared, f"задача {existing['id']}")
+            self.manual(prepared, existing["id"])
             return
         bucket = "создано" if not existing else "обновлено" if self.update else "дозагружено"
         if self.dry_run:
             self.note(bucket, prepared, "(пробный запуск)")
+            self.manual(prepared, existing["id"] if existing else None)
             return
 
         if existing:
@@ -181,6 +195,7 @@ class Importer:
         urls = self.upload_all(task_id, prepared, item["taskId"])
         self.call("PATCH", f"/tasks/{task_id}", json=replace_pending(prepared.payload, urls))
         self.note(bucket, prepared, f"задача {task_id}")
+        self.manual(prepared, task_id)
 
     def run(self, numbers: list[int], limit: int | None) -> None:
         for number in numbers:

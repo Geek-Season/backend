@@ -154,3 +154,58 @@ def test_python_code_block_marked():
 
 def test_cyrillic_in_math_wrapped_in_text():
     assert md(r"<p>\(А_1 \times 10\)</p>") == r"$\text{А}_1 \times 10$"
+
+
+# ---------- Готовые формулы из редактора kompege (Quill + KaTeX/MathML) ----------
+
+QUILL = (
+    '<p>Выражение: <span class="ql-formula" data-value="97968x15_{15} + 7x233_{15}">\ufeff<span contenteditable="false">'
+    '<span class="katex"><span class="katex-mathml"><math><semantics><mrow><mn>97968</mn><mi>x</mi></mrow>'
+    '<annotation encoding="application/x-tex">97968x15_{15} + 7x233_{15}</annotation></semantics></math></span>'
+    '<span class="katex-html" aria-hidden="true"><span class="mord">97968</span><span class="mord">x</span></span>'
+    "</span></span>\ufeff</span> кратно 14.</p>"
+)
+
+
+def test_quill_formula_uses_tex_once():
+    result = html_to_markdown(QUILL)
+    assert result.markdown == "Выражение: $97968x15_{15} + 7x233_{15}$ кратно 14."
+    assert not result.warnings
+
+
+def test_katex_without_quill_uses_annotation():
+    html = ('<p><span class="katex"><span class="katex-mathml"><math><mi>n</mi>'
+            r'<annotation encoding="application/x-tex">n \le 10</annotation></math></span>'
+            '<span class="katex-html"><span class="mord">n</span></span></span></p>')
+    assert md(html) == r"$n \le 10$"
+    assert md("<p><math><mi>x</mi><annotation encoding='application/x-tex'>x^2</annotation></math></p>") == "$x^2$"
+
+
+def test_katex_render_without_tex_keeps_visible_text():
+    # Только отрисовка KaTeX, без MathML: остаётся видимый текст «S», как и раньше.
+    html = '<p>значения <span class="katex"><span class="katex-html"><span class="mord mathit">S</span></span></span>, при</p>'
+    assert md(html) == "значения S, при"
+
+
+def test_empty_quill_leftover_keeps_order_and_ignores_data_value():
+    # Quill оставляет пустой span с data-value рядом с обычной формулой — дублировать нельзя.
+    html = r'<p><span class="ql-formula" data-value="F(x, 0) = x">\(F(x,0)=x\)<br></span>\(F(x,y)=F(y,x\%y)\)</p>'
+    assert md(html) == "$F(x,0)=x$\n$F(x,y)=F(y,x\\%y)$"
+
+
+def test_bom_does_not_hide_author():
+    item = {"taskId": 7, "number": 16, "key": "1",
+            "text": '<p>\ufeff\ufeff<a href="https://vk.com/x"><strong>(Е. Фокин)</strong></a> Функция</p>'}
+    p = prepare(item)
+    assert p.payload["source_label"] == "КЕГЭ (kompege.ru) · Е. Фокин"
+    assert p.payload["statement"] == "Функция"
+
+
+def test_question_19_new_beginnings():
+    sub = [{"number": 20, "key": "1", "text": "<p>20?</p>"}, {"number": 21, "key": "2", "text": "<p>21?</p>"}]
+    for question in ("При каких значениях S Петя выигрывает?", "Кто из игроков выигрывает?",
+                     "У кого из игроков есть выигрышная стратегия?", "С какой карты Петя должен начать?"):
+        p = prepare({"taskId": 8, "number": 19, "key": "3", "subTask": sub,
+                     "text": f"<p>Правила игры.</p><p>{question}</p>"})
+        assert p.payload["statement"] == "Правила игры." and not p.warnings, question
+        assert p.payload["parts"][0]["question"] == question
