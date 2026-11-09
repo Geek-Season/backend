@@ -29,6 +29,10 @@ class InvalidTask(Exception):
     """Задача собрана неправильно: нет ответа, лишние или недостающие части."""
 
 
+class DuplicateExternalId(Exception):
+    """Задача с таким external_id уже есть (в том числе в архиве)."""
+
+
 class WrongAnswerFormat(Exception):
     """Для задачи с частями прислали answer, для обычной — answers."""
 
@@ -143,12 +147,19 @@ def get_task(db: Session, task_id: int) -> Task | None:
     return task
 
 
+def get_task_by_external_id(db: Session, external_id: str) -> Task | None:
+    """Импортированная задача по id во внешнем банке — включая архивные."""
+    return db.scalar(select(Task).where(Task.external_id == external_id))
+
+
 def create_task(db: Session, data: TaskCreate) -> Task:
     number = get_number(db, data.exam_number)
     if number is None:
         raise ExamNumberNotFound(data.exam_number)
 
     _check_shape(number.code, data.correct_answer, data.parts)
+    if data.external_id is not None and get_task_by_external_id(db, data.external_id) is not None:
+        raise DuplicateExternalId(data.external_id)
 
     fields = data.model_dump(exclude={"exam_number", "parts"})
     # id не считаем сами: его выдаёт база, поэтому повторов не бывает.

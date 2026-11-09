@@ -236,6 +236,20 @@ def get_solution(
     return service.solution(task)
 
 
+@tasks_router.get("/by-external/{external_id}", response_model=TaskAdminRead)
+def get_task_by_external_id(
+    external_id: str, db: Session = Depends(get_db), _admin: User = Depends(require_admin)
+):
+    """Импортированная задача по id во внешнем банке (например, kompege:31499), включая архивные.
+
+    Нужна скриптам импорта, чтобы повторный запуск не создавал дублей.
+    """
+    task = service.get_task_by_external_id(db, external_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Задание не найдено")
+    return task
+
+
 @tasks_router.get("/{task_id}/admin", response_model=TaskAdminRead)
 def get_task_admin(task_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
     """Задача целиком — с ответом и разбором. Для редактора."""
@@ -248,6 +262,8 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db), _admin: User = 
         return service.create_task(db, data)
     except service.ExamNumberNotFound as error:
         raise _unknown_number(str(error)) from error
+    except service.DuplicateExternalId as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Задача {error} уже импортирована") from error
     except service.InvalidTask as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 

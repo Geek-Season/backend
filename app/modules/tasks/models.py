@@ -49,6 +49,9 @@ class Task(Base):
     source: Mapped[str] = mapped_column(String(20), default="author")
     # Подпись к метке источника, например «Пересдача 08.07.26».
     source_label: Mapped[str | None] = mapped_column(String(100))
+    # Id задачи во внешнем банке, откуда её импортировали, например «kompege:31499».
+    # Уникален: повторный импорт находит задачу по нему и не создаёт дубль.
+    external_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     difficulty: Mapped[int] = mapped_column(Integer, default=50)
     # Рейтинг задачи для PTS (app/modules/pts): «сложность по факту». None — ещё не считался,
     # тогда старт — из difficulty. RD — уверенность, games — сколько первых попыток учтено.

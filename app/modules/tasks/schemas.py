@@ -122,6 +122,7 @@ class TaskAdminRead(TaskRead):
     correct_answer: str = Field(description="У задач 19–21 — сводка ответов частей, например «19: 29; 20: 28 48; 21: 44»")
     explanation: str
     created_at: datetime
+    external_id: str | None = Field(default=None, description="Id во внешнем банке, если задача импортирована")
     images: list[TaskFileRead] = Field(default=[], validation_alias="images", description="Все картинки задачи")
     parts: list[PartAdminRead] = []
 
@@ -140,6 +141,10 @@ class TaskCreate(BaseModel):
     source: Source = "author"
     source_label: str | None = Field(default=None, max_length=100)
     difficulty: int = Field(default=50, ge=0, le=100)
+    external_id: str | None = Field(
+        default=None, min_length=1, max_length=64, examples=["kompege:31499"],
+        description="Id во внешнем банке при импорте; второй задачи с тем же id не будет (409)",
+    )
     parts: list[PartIn] | None = Field(
         default=None, description="Только для «19-21»: ровно три вопроса с номерами 19, 20, 21"
     )
