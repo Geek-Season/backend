@@ -87,6 +87,7 @@ def weak_numbers(db: Session, user_id: int) -> list[dict]:
             func.sum(case((per_task.c.correct == 0, 1), else_=0)),
         )
         .join(ExamNumber, ExamNumber.id == per_task.c.number_id)
+        .where(ExamNumber.is_active.is_(True))
         .group_by(ExamNumber.code, ExamNumber.title, ExamNumber.position)
         .order_by(ExamNumber.position)
     ).all()
@@ -264,12 +265,12 @@ def user_stats(db: Session, user_id: int) -> dict:
             "attempted": attempted_map.get(n.id, 0),
             "solved": solved_map.get(n.id, 0),
         }
-        for n in db.scalars(select(ExamNumber).order_by(ExamNumber.position))
+        for n in db.scalars(select(ExamNumber).where(ExamNumber.is_active.is_(True)).order_by(ExamNumber.position))
     ]
 
     # --- последние ответы ---
     recent_rows = db.execute(
-        select(Attempt, ExamNumber.code)
+        select(Attempt, ExamNumber.code, Task.is_archived, ExamNumber.is_active)
         .join(Task, Task.id == Attempt.task_id)
         .join(ExamNumber, ExamNumber.id == Task.exam_number_id)
         .where(Attempt.user_id == user_id)
@@ -279,12 +280,13 @@ def user_stats(db: Session, user_id: int) -> dict:
     recent = [
         {
             "task_id": a.task_id,
-            "exam_number": code,
+            "exam_number": "23" if code == "legacy-23" else code,
+            "is_archived": archived or not active,
             "answer": a.answer,
             "is_correct": a.is_correct,
             "created_at": a.created_at,
         }
-        for a, code in recent_rows
+        for a, code, archived, active in recent_rows
     ]
 
     return {

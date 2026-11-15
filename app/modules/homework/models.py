@@ -52,8 +52,19 @@ class HomeworkTask(Base):
     # RESTRICT: задачу из домашки нельзя удалить из базы (в архив — можно, она останется в домашке).
     task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="RESTRICT"), index=True)
 
+    number_code: Mapped[str | None] = mapped_column(String(10))
+    number_title: Mapped[str | None] = mapped_column(String(100))
+
     homework: Mapped[Homework] = relationship(back_populates="tasks")
     task: Mapped[Task] = relationship()
+
+    @property
+    def exam_code(self) -> str:
+        return self.number_code if self.number_code is not None else self.task.exam_code
+
+    @property
+    def exam_title(self) -> str:
+        return self.number_title if self.number_title is not None else self.task.exam_number.title
 
 
 class HomeworkAssignment(Base):

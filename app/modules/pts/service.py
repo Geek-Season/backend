@@ -193,6 +193,8 @@ class Engine:
     seen: set[tuple[int, int]] = field(default_factory=set)  # (ученик, задача), уже встречались
     archived: set[int] = field(default_factory=set)  # не участвуют в «типичной задаче» номера
 
+    active_numbers: set[int] | None = None  # None — все номера (для автономного движка)
+
     def typical(self) -> dict[str, float]:
         """{код номера: медиана рейтингов его задач} — «типичная задача» номера на экзамене."""
         ratings: dict[int, list[float]] = {nid: [] for nid in self.number_codes}
@@ -202,6 +204,7 @@ class Engine:
         return {
             self.number_codes[nid]: statistics.median(values) if values else TYPICAL_DEFAULT
             for nid, values in ratings.items()
+            if self.active_numbers is None or nid in self.active_numbers
         }
 
     def forecast(self, user_id: int) -> ranks.Forecast:
@@ -337,15 +340,21 @@ def _numbers(db: Session) -> dict[int, str]:
 
 # ---------- Живое начисление ----------
 
+def _active_numbers(db: Session) -> set[int]:
+    return set(db.scalars(select(ExamNumber.id).where(ExamNumber.is_active.is_(True))))
+
+
 def _load_engine(db: Session, user: User) -> Engine:
     """Движок с состоянием одного ученика (строка ученика заблокирована до конца транзакции)."""
     db.execute(select(User.id).where(User.id == user.id).with_for_update())
     db.refresh(user)
-    active = list(db.scalars(select(Task).where(Task.is_archived.is_(False))))
+    active = list(db.scalars(select(Task)))
     engine = Engine(
         task_numbers={t.id: t.exam_number_id for t in active},
         number_codes=_numbers(db),
+        active_numbers=_active_numbers(db),
         tasks={t.id: _side_of_task(t) for t in active},
+        archived={t.id for t in active if t.is_archived},
     )
     engine.users[user.id] = UserState(
         Side(user.pts, user.pts_rd, user.pts_vol, user.pts_games), user.rank_key, user.calibrated_at
@@ -462,6 +471,7 @@ def recompute_all(db: Session) -> Summary:
     engine = Engine(
         task_numbers={tid: t.exam_number_id for tid, t in tasks.items()},
         number_codes=_numbers(db),
+        active_numbers=_active_numbers(db),
         tasks={tid: Side(task_start_rating(t.difficulty), TASK_START_RD, 0.06) for tid, t in tasks.items()},
         archived={tid for tid, t in tasks.items() if t.is_archived},
     )
@@ -555,11 +565,13 @@ def user_forecast(db: Session, user: User) -> ranks.Forecast:
 
 
 def _engine_readonly(db: Session, user: User) -> Engine:
-    active = list(db.scalars(select(Task).where(Task.is_archived.is_(False))))
+    active = list(db.scalars(select(Task)))
     engine = Engine(
         task_numbers={t.id: t.exam_number_id for t in active},
         number_codes=_numbers(db),
+        active_numbers=_active_numbers(db),
         tasks={t.id: _side_of_task(t) for t in active},
+        archived={t.id for t in active if t.is_archived},
     )
     engine.users[user.id] = UserState(Side(user.pts, user.pts_rd, user.pts_vol, user.pts_games),
                                       user.rank_key, user.calibrated_at)

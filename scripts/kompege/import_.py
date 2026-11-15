@@ -73,7 +73,11 @@ def replace_pending(payload: dict, urls: dict[int, str]) -> dict:
 
 
 class Importer:
-    def __init__(self, api: str, token: str, data_dir: Path, dry_run: bool, client=None, update: bool = False):
+    def __init__(self, api: str, token: str, data_dir: Path, dry_run: bool, client=None, update: bool = False,
+                 skip_existing: bool = False):
+        if update and skip_existing:
+            raise ValueError("--skip-existing несовместим с --update")
+        self.skip_existing = skip_existing
         self.update = update
         # client — готовый HTTP-клиент с токеном (в тестах — TestClient админа).
         self.http = client or httpx.Client(
@@ -170,6 +174,11 @@ class Importer:
                       "не импортирована, не скачались: " + "; ".join(missing) + " (повторите export или добавьте вручную)")
             return
         existing = self.find(prepared.external_id)
+        if existing and existing.get("exam_number") != prepared.payload["exam_number"]:
+            raise ApiError(f"{prepared.external_id}: другой номер существующей задачи; изменение запрещено")
+        if existing and self.skip_existing:
+            self.note("уже есть", prepared, f"задача {existing['id']} (без изменений)")
+            return
         if existing and not self.update and self.complete(existing, prepared):
             self.note("уже есть", prepared, f"задача {existing['id']}")
             self.manual(prepared, existing["id"])
@@ -230,13 +239,17 @@ def main() -> None:
     parser.add_argument("--number", type=int, action="append", help="только этот номер (можно несколько раз)")
     parser.add_argument("--limit", type=int, help="не больше стольких задач каждого номера (самых новых)")
     parser.add_argument("--dry-run", action="store_true", help="ничего не менять, только показать")
+    parser.add_argument("--skip-existing", action="store_true", help="не менять даже незавершённые существующие задачи")
     parser.add_argument("--update", action="store_true",
                         help="перезаписать уже импортированные задачи из выгрузки (ручные правки в админке пропадут)")
     args = parser.parse_args()
+    if args.skip_existing and args.update:
+        parser.error("--skip-existing несовместим с --update")
     if not args.token:
         parser.error("нужен токен админа: --token или переменная GEEK_TOKEN")
 
-    importer = Importer(args.api, args.token, args.data_dir, args.dry_run, update=args.update)
+    importer = Importer(args.api, args.token, args.data_dir, args.dry_run, update=args.update,
+                        skip_existing=args.skip_existing)
     me = importer.http.get("/tasks/by-external/kompege:0")
     if me.status_code in (401, 403):
         sys.exit(f"API отказал ({me.status_code}): токен не админский или истёк")

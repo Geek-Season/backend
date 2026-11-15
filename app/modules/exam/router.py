@@ -33,6 +33,9 @@ router = APIRouter(prefix="/exam", tags=["Пробник"])
 class ExamItem(BaseModel):
     position: int
     exam_number: str
+    task_number: str | None = Field(
+        default=None, description="Текущий код номера для ссылки на задачу; null — архивный номер"
+    )
     title: str
     points: int
     task_id: int

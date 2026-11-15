@@ -39,6 +39,7 @@ class WeakNumber(BaseModel):
 
 
 class RecentAttempt(BaseModel):
+    is_archived: bool = Field(default=False, description="Архивная задача: тренировочная ссылка недоступна")
     task_id: int
     exam_number: str
     answer: str

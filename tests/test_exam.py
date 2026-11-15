@@ -40,7 +40,7 @@ def test_start_builds_variant_without_answers(client, login):
     codes = [i["exam_number"] for i in exam["items"]]
     assert set(codes) == NUMBERS_WITH_TASKS
     at = codes.index("19")
-    assert codes[at - 1:at + 4] == ["17", "19", "20", "21", "25"]
+    assert codes[at - 1:at + 4] == ["17", "19", "20", "21", "23"]
     assert exam["max_score"] == MAX_SCORE
     assert exam["finished_at"] is None and exam["primary_score"] is None
     assert all(i["correct_answer"] is None and i["explanation"] is None for i in exam["items"])

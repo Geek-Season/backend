@@ -119,17 +119,18 @@ def start(db: Session, r: Redis, user_id: int) -> tuple[ExamSession, bool]:
             select(
                 Task.id,
                 ExamNumber.code,
+                ExamNumber.title,
                 ExamNumber.position,
                 func.row_number()
                 .over(partition_by=Task.exam_number_id, order_by=func.random())
                 .label("rn"),
             )
             .join(ExamNumber, ExamNumber.id == Task.exam_number_id)
-            .where(Task.is_archived.is_(False))
+            .where(Task.is_archived.is_(False), ExamNumber.is_active.is_(True))
             .subquery()
         )
         picked = db.execute(
-            select(numbered.c.id, numbered.c.code)
+            select(numbered.c.id, numbered.c.code, numbered.c.title)
             .where(numbered.c.rn == 1)
             .order_by(numbered.c.position)
         ).all()
@@ -140,18 +141,20 @@ def start(db: Session, r: Redis, user_id: int) -> tuple[ExamSession, bool]:
         duration = timedelta(minutes=settings.exam_duration_minutes)
         parts = {}
         for part in db.scalars(
-            select(TaskPart).where(TaskPart.task_id.in_([task_id for task_id, _ in picked])).order_by(TaskPart.number)
+            select(TaskPart).where(TaskPart.task_id.in_([task_id for task_id, _, _ in picked])).order_by(TaskPart.number)
         ):
             parts.setdefault(part.task_id, []).append(part)
 
         answers = []
-        for task_id, code in picked:
+        for task_id, code, title in picked:
             # Задача из частей — позиция на каждую часть; обычная — одна позиция.
             for part in parts.get(task_id, [None]):
                 answers.append(ExamAnswer(
                     position=len(answers) + 1,
                     task_id=task_id,
                     part_id=part.id if part else None,
+                    number_code=part.number if part else code,
+                    number_title=title,
                     points=2 if code in TWO_POINT_NUMBERS else 1,
                 ))
         session = ExamSession(
@@ -288,8 +291,9 @@ def to_view(session: ExamSession) -> dict:
         item = {
             "position": a.position,
             # У части 19–21 — её собственный номер: «19», «20» или «21».
-            "exam_number": a.part.number if a.part else a.task.exam_number.code,
-            "title": a.task.exam_number.title,
+            "exam_number": a.exam_code,
+            "task_number": a.task.exam_code if a.task.exam_number.is_active else None,
+            "title": a.exam_title,
             "points": a.points,
             "task_id": a.task_id,
             "statement": a.task.statement,

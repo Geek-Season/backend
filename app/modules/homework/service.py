@@ -43,7 +43,7 @@ def _numbers(homework: Homework) -> list[str]:
     """Коды номеров в порядке задач, без повторов."""
     seen: list[str] = []
     for item in homework.tasks:
-        code = item.task.exam_code
+        code = item.exam_code
         if code not in seen:
             seen.append(code)
     return seen
@@ -114,7 +114,7 @@ def my_detail(db: Session, user: User, homework_id: int) -> dict:
         answer = answers.get(task.id)
         items.append({
             "position": item.position,
-            "task": TaskRead.model_validate(task),
+            "task": TaskRead.model_validate(task).model_copy(update={"exam_number": item.exam_code}),
             "answer": answer.answer if answer else None,
             "is_correct": answer.is_correct if answer else None,
             "parts": answer.parts if answer else None,
@@ -238,10 +238,12 @@ def _tried(db: Session, user_ids: list[int], task_ids: list[int]) -> dict[int, l
 def _check_tasks(db: Session, task_ids: list[int]) -> None:
     if len(set(task_ids)) != len(task_ids):
         raise Invalid("Одна и та же задача выбрана дважды")
-    found = set(db.scalars(select(Task.id).where(Task.id.in_(task_ids), Task.is_archived.is_(False))))
+    found = set(db.scalars(select(Task.id).join(ExamNumber).where(
+        Task.id.in_(task_ids), Task.is_archived.is_(False), ExamNumber.is_active.is_(True)
+    )))
     missing = [t for t in task_ids if t not in found]
     if missing:
-        raise Invalid(f"Нет таких задач (или они в архиве): {', '.join(map(str, missing))}")
+        raise Invalid(f"Нет таких задач (или они либо их номера в архиве): {', '.join(map(str, missing))}")
 
 
 def _check_users(db: Session, user_ids: list[int]) -> list[int]:
@@ -258,8 +260,15 @@ def _set_tasks(db: Session, hw: Homework, task_ids: list[int]) -> None:
     db.execute(delete(HomeworkTask).where(HomeworkTask.homework_id == hw.id))
     db.flush()
     db.expire(hw, ["tasks"])
+    selected = {t.id: t for t in db.scalars(
+        select(Task).where(Task.id.in_(task_ids)).options(selectinload(Task.exam_number))
+    )}
     for position, task_id in enumerate(task_ids, start=1):
-        db.add(HomeworkTask(homework_id=hw.id, position=position, task_id=task_id))
+        task = selected[task_id]
+        db.add(HomeworkTask(
+            homework_id=hw.id, position=position, task_id=task_id,
+            number_code=task.exam_code, number_title=task.exam_number.title,
+        ))
 
 
 def _add_students(db: Session, hw: Homework, user_ids: list[int]) -> None:
@@ -291,7 +300,7 @@ def admin_detail(db: Session, homework_id: int) -> dict:
     tried = _tried(db, user_ids, [item.task_id for item in hw.tasks])
     return {
         "id": hw.id, "title": hw.title, "comment": hw.comment, "created_at": hw.created_at, "sent_at": hw.sent_at,
-        "tasks": [_picker_row(item.task, tried.get(item.task_id)) for item in hw.tasks],
+        "tasks": [{**_picker_row(item.task, tried.get(item.task_id)), "exam_number": item.exam_code} for item in hw.tasks],
         "students": [a.user for a in hw.assignments],
     }
 
@@ -371,7 +380,7 @@ def results(db: Session, homework_id: int) -> dict:
                      "correct": correct, "cells": cells})
     return {
         "id": hw.id, "title": hw.title, "sent_at": hw.sent_at,
-        "tasks": [{"position": i.position, "task_id": i.task_id, "exam_number": i.task.exam_code} for i in hw.tasks],
+        "tasks": [{"position": i.position, "task_id": i.task_id, "exam_number": i.exam_code} for i in hw.tasks],
         "rows": rows,
     }
 
@@ -380,7 +389,10 @@ def picker(
     db: Session, number: str | None, q: str, user_ids: list[int], limit: int, offset: int
 ) -> dict:
     """Банк задач для конструктора: фильтр по номеру и поиск по тексту условия."""
-    query = select(Task).join(ExamNumber, ExamNumber.id == Task.exam_number_id).where(Task.is_archived.is_(False))
+    query = (
+        select(Task).join(ExamNumber, ExamNumber.id == Task.exam_number_id)
+        .where(Task.is_archived.is_(False), ExamNumber.is_active.is_(True))
+    )
     if number:
         query = query.where(ExamNumber.code == number)
     if q.strip():
@@ -394,11 +406,11 @@ def picker(
 
 def random_tasks(db: Session, number: str, count: int, user_ids: list[int], exclude_task_ids: list[int]) -> list[dict]:
     """Случайные задачи номера, которых ещё нет в домашке и которые никто из учеников не решал."""
-    if tasks.get_number(db, number) is None:
+    if db.scalar(select(ExamNumber).where(ExamNumber.code == number, ExamNumber.is_active.is_(True))) is None:
         raise Invalid(f"Номер ЕГЭ «{number}» не существует")
     query = (
         select(Task).join(ExamNumber, ExamNumber.id == Task.exam_number_id)
-        .where(ExamNumber.code == number, Task.is_archived.is_(False))
+        .where(ExamNumber.code == number, Task.is_archived.is_(False), ExamNumber.is_active.is_(True))
     )
     if exclude_task_ids:
         query = query.where(Task.id.not_in(exclude_task_ids))

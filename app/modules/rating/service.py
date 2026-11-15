@@ -126,7 +126,7 @@ def leaderboard(db: Session, period: str = "all", number: str | None = None, ran
                 limit: int = 20, me: User | None = None) -> dict:
     number_id = None
     if number is not None:
-        number_id = db.scalar(select(ExamNumber.id).where(ExamNumber.code == number))
+        number_id = db.scalar(select(ExamNumber.id).where(ExamNumber.code == number, ExamNumber.is_active.is_(True)))
         if number_id is None:
             raise UnknownNumber
 

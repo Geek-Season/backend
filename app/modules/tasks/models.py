@@ -28,6 +28,8 @@ class ExamNumber(Base):
     title: Mapped[str] = mapped_column(String(100))
     # Порядок карточек на странице.
     position: Mapped[int] = mapped_column(Integer, unique=True)
+    # Архивная тема сохраняет идентичность и PTS, но не является позицией ЕГЭ.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="exam_number")
 
