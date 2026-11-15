@@ -22,7 +22,7 @@ from app.modules.exam.scale import to_test_score
 from app.modules.progress import service as progress
 from app.modules.progress.models import Attempt
 from app.modules.pts.ranks import RANKS, by_key
-from app.modules.tasks.models import Task
+from app.modules.tasks.models import ExamNumber, Task
 
 NUMBER_CLOSED_MIN_TASKS = 3
 
@@ -54,7 +54,8 @@ def _metrics(db: Session, user_id: int) -> dict:
     # Номера, где задач ≥ 3 и все решены.
     totals = dict(db.execute(
         select(Task.exam_number_id, func.count(Task.id))
-        .where(Task.is_archived.is_(False))
+        .join(ExamNumber, ExamNumber.id == Task.exam_number_id)
+        .where(Task.is_archived.is_(False), ExamNumber.is_active.is_(True))
         .group_by(Task.exam_number_id)
     ).all())
     solved_by_number = progress.solved_by_number(db, user_id)

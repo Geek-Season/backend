@@ -72,6 +72,7 @@ def list_numbers(db: Session) -> list[dict]:
     rows = db.execute(
         select(ExamNumber, func.coalesce(counts.c.cnt, 0))
         .outerjoin(counts, counts.c.exam_number_id == ExamNumber.id)
+        .where(ExamNumber.is_active.is_(True))
         .order_by(ExamNumber.position)
     ).all()
     return [
@@ -81,7 +82,7 @@ def list_numbers(db: Session) -> list[dict]:
 
 
 def get_number(db: Session, code: str) -> ExamNumber | None:
-    return db.scalar(select(ExamNumber).where(ExamNumber.code == code))
+    return db.scalar(select(ExamNumber).where(ExamNumber.code == code, ExamNumber.is_active.is_(True)))
 
 
 def count_number_tasks(db: Session, number: ExamNumber) -> int:

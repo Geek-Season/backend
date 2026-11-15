@@ -49,6 +49,9 @@ class ExamAnswer(Base):
     part_id: Mapped[int | None] = mapped_column(ForeignKey("task_parts.id"))
     points: Mapped[int] = mapped_column(Integer)  # сколько первичных баллов стоит задача
 
+    number_code: Mapped[str | None] = mapped_column(String(10))
+    number_title: Mapped[str | None] = mapped_column(String(100))
+
     answer: Mapped[str | None] = mapped_column(String(MAX_ANSWER_LENGTH))
     is_correct: Mapped[bool | None] = mapped_column(Boolean)  # считается при завершении
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -56,6 +59,16 @@ class ExamAnswer(Base):
     session: Mapped[ExamSession] = relationship(back_populates="answers")
     task: Mapped[Task] = relationship()
     part: Mapped[TaskPart | None] = relationship()
+
+    @property
+    def exam_code(self) -> str:
+        if self.number_code is not None:
+            return self.number_code
+        return self.part.number if self.part else self.task.exam_code
+
+    @property
+    def exam_title(self) -> str:
+        return self.number_title if self.number_title is not None else self.task.exam_number.title
 
     @property
     def correct_answer(self) -> str:

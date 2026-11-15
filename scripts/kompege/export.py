@@ -17,7 +17,7 @@ import argparse
 import json
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import httpx2 as httpx  # пакет httpx2 из requirements.txt (форк httpx с тем же API)
 
@@ -134,6 +134,11 @@ def export_number(http: Polite | None, number: int, out: Path, limit: int | None
         prepared.append(p)
         if http is not None:
             jobs = [(a["url"], attachment_path(out, item["taskId"], a["name"])) for a in p.attachments]
+            # Сохраняем и неподдерживаемые API оригиналы для ручной проверки (например, RTF).
+            for file in item.get("files") or []:
+                name = PurePosixPath((file.get("name") or file.get("url", "")).replace("\\", "/")).name.strip()
+                if name and name not in {".", ".."} and not any(a["name"] == name for a in p.attachments):
+                    jobs.append((file["url"], attachment_path(out, item["taskId"], name)))
             jobs += [(i.src, image_path(out, i.src)) for i in p.images if i.src]
             for url, path in jobs:
                 try:
